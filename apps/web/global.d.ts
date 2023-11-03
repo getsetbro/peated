@@ -1,5 +1,6 @@
 /// <reference types="@remix-run/dev" />
 /// <reference types="@remix-run/node" />
+/// <reference types="vite/client" />
 
 import type { User } from "@peated/shared/types";
 import "@remix-run/server-runtime";

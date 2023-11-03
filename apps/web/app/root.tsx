@@ -1,10 +1,9 @@
-import FontStyles from "@fontsource/raleway/index.css";
 import { GoogleOAuthProvider } from "@react-oauth/google";
-import { cssBundleHref } from "@remix-run/css-bundle";
 import type { LinksFunction, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import {
   Links,
+  LiveReload,
   Meta,
   Outlet,
   Scripts,
@@ -30,12 +29,14 @@ import logo192Url from "~/assets/logo192.png";
 import ErrorPage from "~/components/error-page";
 import { AuthProvider } from "~/hooks/useAuth";
 import { OnlineStatusProvider } from "~/hooks/useOnlineStatus";
-import stylesheetUrl from "~/styles/index.css";
 import LoadingIndicator from "./components/loadingIndicator";
 import { default as config } from "./config";
 import { ApiProvider } from "./hooks/useApi";
 import { ApiUnauthorized } from "./lib/api";
 import { logError } from "./lib/log";
+
+import "@fontsource/raleway/index.css";
+import "~/styles/index.css";
 
 function initMobileControls() {
   if (typeof document === "undefined") return;
@@ -77,7 +78,6 @@ unregisterServiceWorkers();
 
 export const links: LinksFunction = () => [
   { rel: "manifest", href: "/resources/manifest.webmanifest" },
-  { rel: "stylesheet", href: stylesheetUrl },
   { rel: "icon", type: "image/png", href: glyphUrl },
   {
     rel: "mask-icon",
@@ -91,9 +91,6 @@ export const links: LinksFunction = () => [
     href: logo192Url,
     color: config.THEME_COLOR,
   },
-
-  { rel: "stylesheet", href: FontStyles },
-  ...(cssBundleHref ? [{ rel: "stylesheet", href: cssBundleHref }] : []),
 ];
 
 export async function loader({ context }: LoaderFunctionArgs) {
@@ -235,8 +232,8 @@ function Document({
             __html: `window.CONFIG = ${JSON.stringify(config || {})};`,
           }}
         />
+        <LiveReload />
         <Scripts />
-        {/* <LiveReload /> */}
       </body>
     </html>
   );
