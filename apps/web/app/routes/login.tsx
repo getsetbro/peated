@@ -8,7 +8,6 @@ import { json } from "@remix-run/node";
 import { Form, Link, useActionData, useSubmit } from "@remix-run/react";
 import { useState } from "react";
 import { type SitemapFunction } from "remix-sitemap";
-
 import Alert from "~/components/alert";
 import PeatedLogo from "~/components/assets/Logo";
 import Button from "~/components/button";
@@ -22,12 +21,14 @@ export const sitemap: SitemapFunction = () => ({
   exclude: true,
 });
 
-export async function action({ request }: ActionFunctionArgs) {
+export async function action({ request, context }: ActionFunctionArgs) {
   const url = new URL(request.url);
   const redirectTo = url.searchParams.get("redirectTo");
 
   try {
-    const session = await authenticator.authenticate("default", request, {});
+    const session = await authenticator.authenticate("default", request, {
+      context,
+    });
 
     if (!session) {
       return json({ error: "Invalid credentials" });
@@ -147,7 +148,7 @@ export default function Login() {
         </Link>
       </div>
 
-      <div className="min-w-sm mt-8 flex-1">
+      <div className="min-w-sm mt-8 flex-auto">
         {error ? <Alert>{error}</Alert> : null}
         {config.GOOGLE_CLIENT_ID && (
           <>

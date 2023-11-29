@@ -1,3 +1,5 @@
+import { sentryLink } from "@peated/server/src/lib/trpc";
+import type { User } from "@peated/server/types";
 import { GoogleOAuthProvider } from "@react-oauth/google";
 import type { LinksFunction, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
@@ -19,11 +21,10 @@ import {
   QueryClient,
   QueryClientProvider,
 } from "@tanstack/react-query";
-import type { PropsWithChildren } from "react";
+import { httpBatchLink } from "@trpc/client";
+import type { ComponentProps, PropsWithChildren } from "react";
 import { useState } from "react";
 import { useDehydratedState } from "use-dehydrated-state";
-
-import type { User } from "@peated/shared/types";
 import glyphUrl from "~/assets/glyph.png";
 import logo192Url from "~/assets/logo192.png";
 import ErrorPage from "~/components/error-page";
@@ -34,6 +35,7 @@ import { default as config } from "./config";
 import { ApiProvider } from "./hooks/useApi";
 import { ApiUnauthorized } from "./lib/api";
 import { logError } from "./lib/log";
+import { trpc } from "./lib/trpc";
 
 import "@fontsource/raleway/index.css";
 import "~/styles/index.css";
@@ -141,24 +143,55 @@ export default withSentry(function App() {
   return (
     <Document config={config} data={data}>
       <GoogleOAuthProvider clientId={config.GOOGLE_CLIENT_ID}>
-        <QueryClientProvider client={queryClient}>
-          <Hydrate state={dehydratedState}>
-            <OnlineStatusProvider>
-              <AuthProvider user={user}>
-                <ApiProvider
-                  accessToken={accessToken}
-                  server={config.API_SERVER}
-                >
-                  <Outlet />
-                </ApiProvider>
-              </AuthProvider>
-            </OnlineStatusProvider>
-          </Hydrate>
-        </QueryClientProvider>
+        <TRPCProvider
+          queryClient={queryClient}
+          accessToken={accessToken}
+          key={accessToken}
+        >
+          <QueryClientProvider client={queryClient}>
+            <Hydrate state={dehydratedState}>
+              <OnlineStatusProvider>
+                <AuthProvider user={user}>
+                  <ApiProvider
+                    accessToken={accessToken}
+                    server={config.API_SERVER}
+                  >
+                    <Outlet />
+                  </ApiProvider>
+                </AuthProvider>
+              </OnlineStatusProvider>
+            </Hydrate>
+          </QueryClientProvider>
+        </TRPCProvider>
       </GoogleOAuthProvider>
     </Document>
   );
 });
+
+function TRPCProvider({
+  accessToken,
+  ...props
+}: { accessToken?: string } & Omit<
+  ComponentProps<typeof trpc.Provider>,
+  "client"
+>) {
+  const [trpcClient] = useState(() =>
+    trpc.createClient({
+      links: [
+        sentryLink(Sentry.captureException),
+        httpBatchLink({
+          url: `${config.API_SERVER}/trpc`,
+          async headers() {
+            return {
+              authorization: accessToken ? `Bearer ${accessToken}` : "",
+            };
+          },
+        }),
+      ],
+    }),
+  );
+  return <trpc.Provider client={trpcClient} {...props} />;
+}
 
 export function ErrorBoundary() {
   const error = useRouteError();

@@ -2,11 +2,13 @@ import {
   CATEGORY_LIST,
   DEFAULT_CREATED_BY_ID,
   DEFAULT_TAGS,
-} from "@peated/shared/constants";
-import { db } from "@peated/shared/db";
-import { bottles, changes } from "@peated/shared/db/schema";
-import { arraysEqual, objectsShallowEqual } from "@peated/shared/lib/equals";
-import { CategoryEnum } from "@peated/shared/schemas";
+} from "@peated/server/constants";
+import { db } from "@peated/server/db";
+import type { Bottle } from "@peated/server/db/schema";
+import { bottles, changes } from "@peated/server/db/schema";
+import { arraysEqual, objectsShallowEqual } from "@peated/server/lib/equals";
+import { logError } from "@peated/server/lib/log";
+import { CategoryEnum } from "@peated/server/schemas";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import config from "~/config";
@@ -30,7 +32,7 @@ If the whiskey is made in Scotland, it is always spelled "whisky".
 
 'statedAge' should be the number of years the whiskey has been aged in barrels, if applicable.
 
-'confidence' should be 0 if you do believe this is not a real entity, 1 if you are absolutely certain this information is factual, or inbetween 0 and 1 indicating your confidence level. It should always be set. 
+'confidence' should be 0 if you do believe this is not a real entity, 1 if you are absolutely certain this information is factual, or inbetween 0 and 1 indicating your confidence level. It should always be set.
 
 'category' should be one of the following:
 
@@ -65,37 +67,31 @@ const OpenAIBottleDetailsSchema = z.object({
 });
 
 // we dont send enums to openai as they dont get used
-const OpenAIBottleDetailsValidationSchema = z.object({
-  description: z.string().nullable().optional(),
-  tastingNotes: z
-    .object({
-      nose: z.string(),
-      palate: z.string(),
-      finish: z.string(),
-    })
-    .nullable()
-    .optional(),
+const OpenAIBottleDetailsValidationSchema = OpenAIBottleDetailsSchema.extend({
   category: CategoryEnum.nullable().optional(),
-  statedAge: z.number().nullable().optional(),
-  suggestedTags: z.array(DefaultTagEnum).optional(),
-  confidence: z.number().default(0).optional(),
-  aiNotes: z.string().nullable().optional(),
+  // TODO: ChatGPT is ignoring this shit, so lets validate later and throw away if invalid
+  // suggestedTags: z.array(DefaultTagEnum).optional(),
 });
 
 type Response = z.infer<typeof OpenAIBottleDetailsSchema>;
 
-async function generateBottleDetails(
-  bottleName: string,
-): Promise<Response | null> {
+async function generateBottleDetails(bottle: Bottle): Promise<Response | null> {
   if (!config.OPENAI_API_KEY) return null;
 
   const result = await getStructuredResponse(
-    generatePrompt(bottleName),
+    generatePrompt(bottle.fullName),
     OpenAIBottleDetailsSchema,
     OpenAIBottleDetailsValidationSchema,
+    undefined,
+    {
+      bottle: {
+        id: bottle.id,
+        fullName: bottle.fullName,
+      },
+    },
   );
 
-  if (!result || result.confidence < 0.75)
+  if (!result || !result.confidence || result.confidence < 0.75)
     // idk
     return null;
   return result;
@@ -105,8 +101,11 @@ export default async function ({ bottleId }: { bottleId: number }) {
   const bottle = await db.query.bottles.findFirst({
     where: (bottles, { eq }) => eq(bottles.id, bottleId),
   });
-  if (!bottle) throw new Error("Unknown bottle");
-  const result = await generateBottleDetails(bottle.fullName);
+  if (!bottle) {
+    logError(`Unknown bottle: ${bottleId}`);
+    return;
+  }
+  const result = await generateBottleDetails(bottle);
 
   if (!result) return;
 
@@ -122,10 +121,23 @@ export default async function ({ bottleId }: { bottleId: number }) {
     data.tastingNotes = result.tastingNotes;
 
   if (
-    result.suggestedTags.length &&
+    result.suggestedTags?.length &&
     !arraysEqual(result.suggestedTags, bottle.suggestedTags)
-  )
-    data.suggestedTags = result.suggestedTags;
+  ) {
+    const firstInvalidTag = result.suggestedTags.find(
+      (t) => !DefaultTagEnum.safeParse(t).success,
+    );
+    if (!firstInvalidTag) {
+      data.suggestedTags = result.suggestedTags;
+    } else {
+      logError(`Invalid value for suggestedTags: ${firstInvalidTag}`, {
+        bottle: {
+          id: bottle.id,
+          fullName: bottle.fullName,
+        },
+      });
+    }
+  }
 
   if (result.category && result.category !== bottle.category)
     data.category = result.category;
@@ -144,9 +156,9 @@ export default async function ({ bottleId }: { bottleId: number }) {
       displayName: bottle.fullName,
       createdById: DEFAULT_CREATED_BY_ID,
       type: "update",
-      data: JSON.stringify({
+      data: {
         ...data,
-      }),
+      },
     });
   });
 }

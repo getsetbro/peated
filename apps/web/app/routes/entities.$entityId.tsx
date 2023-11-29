@@ -7,35 +7,24 @@ import type {
 } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Link, Outlet, useLoaderData, useParams } from "@remix-run/react";
-import { useQuery } from "@tanstack/react-query";
-import type { LatLngTuple } from "leaflet";
 import invariant from "tiny-invariant";
-
-import { ShareIcon } from "@heroicons/react/24/outline";
-import type { Entity, Paginated } from "@peated/shared/types";
-import RobotImage from "~/assets/robot.png";
 import EntityIcon from "~/components/assets/Entity";
 import Button from "~/components/button";
 import Chip from "~/components/chip";
-import { ClientOnly } from "~/components/clientOnly";
-import Collapsable from "~/components/collapsable";
-import { DistributionChart } from "~/components/distributionChart";
 import Layout from "~/components/layout";
-import { Map } from "~/components/map.client";
-import Markdown from "~/components/markdown";
-import QueryBoundary from "~/components/queryBoundary";
+import ShareButton from "~/components/shareButton";
 import Tabs from "~/components/tabs";
-import useApi from "~/hooks/useApi";
 import useAuth from "~/hooks/useAuth";
 import { summarize } from "~/lib/markdown";
-import { formatCategoryName } from "~/lib/strings";
 import { getEntityUrl } from "~/lib/urls";
-import { getEntity } from "~/queries/entities";
 
-export async function loader({ params, context }: LoaderFunctionArgs) {
-  invariant(params.entityId);
+export async function loader({
+  params: { entityId },
+  context: { trpc },
+}: LoaderFunctionArgs) {
+  invariant(entityId);
 
-  const entity: Entity = await getEntity(context.api, params.entityId);
+  const entity = await trpc.entityById.query(Number(entityId));
 
   return json({ entity });
 }
@@ -86,159 +75,115 @@ export default function EntityDetails() {
 
   return (
     <Layout>
-      <div className="my-4 flex min-w-full flex-wrap gap-x-3 gap-y-4 p-3 sm:flex-nowrap sm:py-0">
-        <EntityIcon className="hidden h-14 w-auto sm:inline-block" />
-
-        <div className="w-full flex-1 flex-col items-center space-y-1 sm:w-auto sm:items-start">
-          <h1 className="mb-2 truncate text-center text-3xl font-semibold leading-7 sm:text-left">
-            {entity.name}
-          </h1>
-          <div className="truncate text-center text-slate-500 sm:text-left">
-            {!!entity.country && (
-              <>
-                Located in{" "}
-                <Link
-                  to={`/entities?country=${encodeURIComponent(entity.country)}`}
-                  className="hover:underline"
-                >
-                  {entity.country}
-                </Link>
-              </>
-            )}
-            {!!entity.region && (
-              <span>
-                {" "}
-                &middot;{" "}
-                <Link
-                  to={`/entities?region=${encodeURIComponent(entity.region)}`}
-                  className="hover:underline"
-                >
-                  {entity.region}
-                </Link>
-              </span>
-            )}
-          </div>
-        </div>
-        <div className="sm:justify-left mb-4 flex w-full justify-center space-x-2 sm:w-auto">
-          {entity.type.sort().map((t) => (
-            <Chip
-              key={t}
-              size="small"
-              color="highlight"
-              as={Link}
-              to={`/entities?type=${encodeURIComponent(t)}`}
-            >
-              {t}
-            </Chip>
-          ))}
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-4 sm:flex-row">
-        <div className="flex-1">
-          <div className="my-8 flex justify-center gap-4 sm:justify-start">
-            <Button
-              to={`/addBottle?${
-                entity.type.indexOf("brand") !== -1 ? `brand=${entity.id}&` : ""
-              }${
-                entity.type.indexOf("distiller") !== -1
-                  ? `distiller=${entity.id}&`
-                  : ""
-              }${
-                entity.type.indexOf("bottler") !== -1
-                  ? `bottler=${entity.id}&`
-                  : ""
-              }`}
-              color="primary"
-            >
-              Add a Bottle
-            </Button>
-
-            <Button
-              icon={
-                <ShareIcon className="-ml-0.5 h-5 w-5" aria-hidden="true" />
-              }
-              onClick={() => {
-                if (navigator.share) {
-                  navigator
-                    .share({
-                      title: entity.name,
-                      url: `/entities/${entity.id}`,
-                    })
-                    .catch((error) => console.error("Error sharing", error));
-                }
-              }}
-            />
-
-            {user?.mod && (
-              <Menu as="div" className="menu">
-                <Menu.Button as={Button}>
-                  <EllipsisVerticalIcon className="h-5 w-5" />
-                </Menu.Button>
-                <Menu.Items className="absolute right-0 z-10 mt-2 w-32 origin-top-right lg:left-0 lg:origin-top-left">
-                  <Menu.Item as={Link} to={`/entities/${entity.id}/edit`}>
-                    Edit Entity
-                  </Menu.Item>
-                  <Menu.Item as={Link} to={`/entities/${entity.id}/merge`}>
-                    Merge Entity
-                  </Menu.Item>
-                </Menu.Items>
-              </Menu>
-            )}
+      <div className="w-full p-3 lg:py-0">
+        <div className="my-4 flex w-full flex-wrap justify-center gap-x-3 gap-y-4 lg:flex-nowrap lg:justify-start">
+          <div className="hidden w-14 lg:block">
+            <EntityIcon className="h-14 w-auto" />
           </div>
 
-          <ClientOnly>
-            {() => (
-              <QueryBoundary
-                loading={
-                  <div
-                    className="mb-4 animate-pulse rounded bg-slate-800"
-                    style={{ height: 50 }}
-                  />
-                }
-                fallback={() => null}
+          <div className="flex flex-auto flex-col items-center justify-center truncate lg:w-auto lg:items-start">
+            <h1
+              className="max-w-full truncate text-center text-3xl font-semibold lg:mx-0 lg:text-left"
+              title={entity.name}
+            >
+              {entity.name}
+            </h1>
+            <div className="max-w-full text-center text-slate-500 lg:text-left">
+              {!!entity.country && (
+                <>
+                  Located in{" "}
+                  <Link
+                    to={`/entities?country=${encodeURIComponent(
+                      entity.country,
+                    )}`}
+                    className="truncate hover:underline"
+                  >
+                    {entity.country}
+                  </Link>
+                </>
+              )}
+              {!!entity.region && (
+                <span>
+                  {" "}
+                  &middot;{" "}
+                  <Link
+                    to={`/entities?region=${encodeURIComponent(entity.region)}`}
+                    className="truncate hover:underline"
+                  >
+                    {entity.region}
+                  </Link>
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="lg:justify-left mb-4 flex w-full justify-center space-x-2 lg:min-w-[200px]">
+            {entity.type.sort().map((t) => (
+              <Chip
+                key={t}
+                size="small"
+                color="highlight"
+                as={Link}
+                to={`/entities?type=${encodeURIComponent(t)}`}
               >
-                <EntitySpiritDistribution entityId={entity.id} />
-              </QueryBoundary>
-            )}
-          </ClientOnly>
+                {t}
+              </Chip>
+            ))}
+          </div>
         </div>
-        <EntityMap position={entity.location} />
-      </div>
 
-      {entity.description && (
-        <div className="flex">
-          <div className="flex-1">
-            <Tabs fullWidth border>
-              <Tabs.Item active>About</Tabs.Item>
-            </Tabs>
-            <div className="my-6">
-              <div className="mt-5 flex space-x-4">
-                <Collapsable mobileOnly>
-                  <div className="prose prose-invert -mt-5 max-w-none flex-1">
-                    <Markdown content={entity.description} />
-                  </div>
-                </Collapsable>
+        <div className="flex flex-col gap-4 lg:flex-row">
+          <div className="flex-auto">
+            <div className="my-8 flex justify-center gap-4 lg:justify-start">
+              <Button
+                to={`/addBottle?${
+                  entity.type.indexOf("brand") !== -1
+                    ? `brand=${entity.id}&`
+                    : ""
+                }${
+                  entity.type.indexOf("distiller") !== -1
+                    ? `distiller=${entity.id}&`
+                    : ""
+                }${
+                  entity.type.indexOf("bottler") !== -1
+                    ? `bottler=${entity.id}&`
+                    : ""
+                }`}
+                color="primary"
+              >
+                Add a Bottle
+              </Button>
 
-                <img src={RobotImage} className="hidden h-40 w-40 sm:block" />
-              </div>
-              <div className="prose prose-invert max-w-none flex-1">
-                <dl>
-                  <dt>Year Established</dt>
-                  <dd>{entity.yearEstablished ?? <em>n/a</em>}</dd>
-                </dl>
-              </div>
+              <ShareButton title={entity.name} url={`/entities/${entity.id}`} />
+
+              {user?.mod && (
+                <Menu as="div" className="menu">
+                  <Menu.Button as={Button}>
+                    <EllipsisVerticalIcon className="h-5 w-5" />
+                  </Menu.Button>
+                  <Menu.Items className="absolute right-0 z-10 mt-2 w-32 origin-top-right lg:left-0 lg:origin-top-left">
+                    <Menu.Item as={Link} to={`/entities/${entity.id}/edit`}>
+                      Edit Entity
+                    </Menu.Item>
+                    <Menu.Item as={Link} to={`/entities/${entity.id}/merge`}>
+                      Merge Entity
+                    </Menu.Item>
+                  </Menu.Items>
+                </Menu>
+              )}
             </div>
           </div>
         </div>
-      )}
+      </div>
 
-      <Tabs fullWidth>
+      <Tabs fullWidth border>
         <Tabs.Item as={Link} to={baseUrl} controlled>
-          Activity
+          Overview
         </Tabs.Item>
         <Tabs.Item as={Link} to={`${baseUrl}/bottles`} controlled>
           Bottles ({entity.totalBottles.toLocaleString()})
+        </Tabs.Item>
+        <Tabs.Item as={Link} to={`${baseUrl}/tastings`} controlled>
+          Tastings ({entity.totalTastings.toLocaleString()})
         </Tabs.Item>
       </Tabs>
 
@@ -246,59 +191,3 @@ export default function EntityDetails() {
     </Layout>
   );
 }
-type Category = {
-  category: string;
-  count: number;
-};
-
-const EntitySpiritDistribution = ({ entityId }: { entityId: number }) => {
-  const api = useApi();
-
-  const { data } = useQuery(
-    ["entities", entityId, "categories"],
-    (): Promise<Paginated<Category> & { totalCount: number }> =>
-      api.get(`/entities/${entityId}/categories`),
-  );
-
-  if (!data) return null;
-
-  const { results, totalCount } = data;
-
-  if (!results.length) return null;
-
-  return (
-    <DistributionChart
-      items={results.map((t) => ({
-        name: formatCategoryName(t.category),
-        count: t.count,
-        category: t.category,
-      }))}
-      totalCount={totalCount}
-      to={(item) =>
-        `/bottles?entity=${entityId}&category=${encodeURIComponent(
-          item.category,
-        )}`
-      }
-    />
-  );
-};
-
-const EntityMap = ({ position }: { position: LatLngTuple | null }) => {
-  const mapHeight = "200px";
-  const mapWidth = mapHeight;
-
-  if (!position) return null;
-
-  return (
-    <ClientOnly
-      fallback={
-        <div
-          className="animate-pulse bg-slate-800"
-          style={{ height: mapHeight, width: mapWidth }}
-        />
-      }
-    >
-      {() => <Map height={mapHeight} width={mapWidth} position={position} />}
-    </ClientOnly>
-  );
-};

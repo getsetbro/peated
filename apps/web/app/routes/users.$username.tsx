@@ -3,8 +3,6 @@ import { AtSymbolIcon, EllipsisVerticalIcon } from "@heroicons/react/20/solid";
 import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Link, Outlet, useLoaderData, useSubmit } from "@remix-run/react";
-import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
 import invariant from "tiny-invariant";
 import Button from "~/components/button";
 import Chip from "~/components/chip";
@@ -14,15 +12,13 @@ import Layout from "~/components/layout";
 import QueryBoundary from "~/components/queryBoundary";
 import Tabs from "~/components/tabs";
 import UserAvatar from "~/components/userAvatar";
-import useApi from "~/hooks/useApi";
 import useAuth from "~/hooks/useAuth";
-import { fetchUserTags, getUser } from "~/queries/users";
+import { trpc } from "~/lib/trpc";
 
 const UserTagDistribution = ({ userId }: { userId: number }) => {
-  const api = useApi();
-  const { data } = useQuery(["users", userId, "tags"], () =>
-    fetchUserTags(api, userId),
-  );
+  const { data } = trpc.userTagList.useQuery({
+    user: userId,
+  });
 
   if (!data) return null;
 
@@ -43,15 +39,19 @@ const UserTagDistribution = ({ userId }: { userId: number }) => {
   );
 };
 
-export async function loader({ params, context }: LoaderFunctionArgs) {
-  invariant(params.username);
+export async function loader({
+  params: { username },
+  context: { trpc },
+}: LoaderFunctionArgs) {
+  invariant(username);
 
-  const user = await getUser(context.api, params.username);
-
-  return json({ user });
+  return json({ user: await trpc.userById.query(username as string) });
 }
 
-export const meta: MetaFunction = ({ data: { user } }) => {
+export const meta: MetaFunction<typeof loader> = ({ data }) => {
+  if (!data) return [];
+
+  const { user } = data;
   return [
     {
       title: `@${user.username}`,
@@ -62,24 +62,57 @@ export const meta: MetaFunction = ({ data: { user } }) => {
 };
 
 export default function Profile() {
-  const api = useApi();
   const { user: currentUser } = useAuth();
   const submit = useSubmit();
-  const data = useLoaderData<typeof loader>();
+  const { user: initialUserData } = useLoaderData<typeof loader>();
+  const trpcUtils = trpc.useUtils();
 
-  const [user, setUser] = useState(data.user);
-  const [friendStatus, setFriendStatus] = useState(user.friendStatus);
+  const { data: user } = trpc.userById.useQuery(initialUserData.id, {
+    initialData: initialUserData,
+  });
 
-  const friendUser = async (follow: boolean) => {
-    const data = await api[follow ? "post" : "delete"](`/friends/${user.id}`);
-    setFriendStatus(data.status);
-  };
+  const friendCreateMutation = trpc.friendCreate.useMutation({
+    onSuccess: (data, toUserId) => {
+      const previous = trpcUtils.userById.getData(toUserId);
+      if (previous) {
+        trpcUtils.userById.setData(toUserId, {
+          ...previous,
+          friendStatus: data.status,
+        });
+      }
+    },
+  });
+  const friendDeleteMutation = trpc.friendDelete.useMutation({
+    onSuccess: (data, toUserId) => {
+      const previous = trpcUtils.userById.getData(toUserId);
+      if (previous) {
+        trpcUtils.userById.setData(toUserId, {
+          ...previous,
+          friendStatus: data.status,
+        });
+      }
+    },
+  });
+  const userUpdateMutation = trpc.userUpdate.useMutation({
+    onSuccess: (data, input) => {
+      const previous = trpcUtils.userById.getData(input.user);
+      if (previous) {
+        const newUser = {
+          ...previous,
+          ...data,
+        };
+        trpcUtils.userById.setData(input.user, newUser);
+        if (data.id === currentUser?.id)
+          trpcUtils.userById.setData("me", newUser);
+      }
+    },
+  });
 
   const isPrivate =
     user.private &&
     currentUser &&
     user.id !== currentUser.id &&
-    friendStatus !== "friends";
+    user.friendStatus !== "friends";
 
   return (
     <Layout>
@@ -87,7 +120,7 @@ export default function Profile() {
         <div className="flex w-full justify-center sm:w-auto sm:justify-start">
           <UserAvatar user={user} size={150} />
         </div>
-        <div className="flex w-full flex-col justify-center gap-y-4 px-4 sm:w-auto sm:flex-1 sm:gap-y-2">
+        <div className="flex w-full flex-col justify-center gap-y-4 px-4 sm:w-auto sm:flex-auto sm:gap-y-2">
           <h3 className="self-center text-4xl font-semibold leading-normal text-white sm:self-start">
             {user.displayName}
           </h3>
@@ -142,11 +175,15 @@ export default function Profile() {
                 <>
                   <Button
                     color="primary"
-                    onClick={() => friendUser(friendStatus === "none")}
+                    onClick={() => {
+                      if (user.friendStatus === "none")
+                        friendCreateMutation.mutate(user.id);
+                      else friendDeleteMutation.mutate(user.id);
+                    }}
                   >
-                    {friendStatus === "none"
+                    {user.friendStatus === "none"
                       ? "Add Friend"
-                      : friendStatus === "pending"
+                      : user.friendStatus === "pending"
                       ? "Request Pending"
                       : "Remove Friend"}
                   </Button>
@@ -174,13 +211,11 @@ export default function Profile() {
                   <Menu.Items className="absolute right-0 z-10 mt-2 w-64 origin-top-right">
                     <Menu.Item
                       as="button"
-                      onClick={async () => {
-                        const data = await api.put(`/users/${user.id}`, {
-                          data: {
-                            mod: !user.mod,
-                          },
+                      onClick={() => {
+                        userUpdateMutation.mutate({
+                          user: user.id,
+                          mod: !user.mod,
                         });
-                        setUser((state) => ({ ...state, ...data }));
                       }}
                     >
                       {user.mod

@@ -1,5 +1,5 @@
-import { CheckBadgeIcon, StarIcon } from "@heroicons/react/24/outline";
-import type { Bottle } from "@peated/shared/types";
+import { CheckBadgeIcon, StarIcon } from "@heroicons/react/20/solid";
+import type { Bottle } from "@peated/server/types";
 import { Link } from "@remix-run/react";
 import classNames from "../lib/classNames";
 import { formatCategoryName } from "../lib/strings";
@@ -13,6 +13,58 @@ type BottleFormData = {
   category?: string | null | undefined;
 };
 
+function BottleScaffold({
+  name,
+  category,
+  brand,
+  statedAge,
+  color = "default",
+  noGutter = false,
+}: {
+  name: any;
+  category: any;
+  brand: any;
+  statedAge: any;
+
+  color?: "default" | "highlight";
+  noGutter?: boolean;
+}) {
+  return (
+    <div
+      className={classNames(
+        "flex items-center space-x-2 overflow-hidden sm:space-x-3",
+        color === "highlight"
+          ? "bg-highlight text-black"
+          : "bg-slate-950 text-white",
+        noGutter ? "" : "p-3 sm:px-5 sm:py-4",
+      )}
+    >
+      <div className="flex-1 overflow-hidden">
+        <div className="flex w-full items-center space-x-1 truncate font-semibold">
+          {name}
+        </div>
+        <div
+          className={classNames(
+            "text-sm",
+            color === "highlight" ? "" : "text-light",
+          )}
+        >
+          {category}
+        </div>
+      </div>
+      <div
+        className={classNames(
+          color === "highlight" ? "" : "text-light",
+          "hidden w-[200px] flex-col items-end justify-center whitespace-nowrap text-sm sm:flex",
+        )}
+      >
+        <div className="max-w-full truncate">{brand}</div>
+        <div>{statedAge}</div>
+      </div>
+    </div>
+  );
+}
+
 export const PreviewBottleCard = ({
   data,
 }: {
@@ -20,18 +72,13 @@ export const PreviewBottleCard = ({
 }) => {
   const { brand } = data;
   return (
-    <div className="bg-highlight flex items-center space-x-4 p-3 text-black sm:px-5 sm:py-4">
-      <div className="flex-1 space-y-1">
-        <h4 className="block max-w-[250px] truncate font-semibold leading-6 sm:max-w-[480px]">
-          {data.name}
-        </h4>
-        <div className="text-sm">{brand ? brand.name : "Unknown Bottle"}</div>
-      </div>
-      <div className="w-22 flex flex-col items-end space-y-1 whitespace-nowrap text-sm leading-6">
-        <div>{data.category ? formatCategoryName(data.category) : null}</div>
-        <div>{data.statedAge ? `Aged ${data.statedAge} years` : null}</div>
-      </div>
-    </div>
+    <BottleScaffold
+      name={data.name}
+      category={data.category ? formatCategoryName(data.category) : null}
+      brand={brand ? brand.name : "Unknown Bottle"}
+      statedAge={data.statedAge ? `Aged ${data.statedAge} years` : null}
+      color="highlight"
+    />
   );
 };
 
@@ -45,49 +92,31 @@ export default function BottleCard({
   color?: "highlight" | "default";
 }) {
   return (
-    <div
-      className={classNames(
-        "flex items-center space-x-2 sm:space-x-3",
-        color === "highlight"
-          ? "bg-highlight text-black"
-          : "bg-slate-950 text-white",
-        noGutter ? "" : "p-3 sm:px-5 sm:py-4",
-      )}
-    >
-      <div className="flex-1 space-y-1">
-        <h4 className="flex items-center space-x-1">
-          <Link
-            to={`/bottles/${bottle.id}`}
-            className="block max-w-[260px] truncate font-semibold hover:underline sm:max-w-[480px]"
-            title={bottle.fullName}
-          >
-            {bottle.fullName}
-          </Link>
+    <BottleScaffold
+      name={
+        <>
+          <h4 className="truncate font-semibold">
+            <Link
+              to={`/bottles/${bottle.id}`}
+              className="hover:underline"
+              title={bottle.fullName}
+            >
+              {bottle.fullName}
+            </Link>
+          </h4>
           {bottle.isFavorite && (
-            <StarIcon className="h-4 w-4" aria-hidden="true" />
+            <div className="w-4">
+              <StarIcon className="w-4" aria-hidden="true" />
+            </div>
           )}
           {bottle.hasTasted && (
-            <CheckBadgeIcon className="h-4 w-4" aria-hidden="true" />
+            <div className="w-4">
+              <CheckBadgeIcon className="w-4" aria-hidden="true" />
+            </div>
           )}
-        </h4>
-        <div
-          className={classNames(
-            "text-sm",
-            color === "highlight" ? "" : "text-light",
-          )}
-        >
-          <span className="hidden sm:inline"></span>
-          <Link to={`/entities/${bottle.brand.id}`} className="hover:underline">
-            {bottle.brand.name}
-          </Link>
-        </div>
-      </div>
-      <div
-        className={classNames(
-          color === "highlight" ? "" : "text-light",
-          "flex flex-col items-end space-y-1 whitespace-nowrap text-sm",
-        )}
-      >
+        </>
+      }
+      category={
         <div>
           {bottle.category && (
             <Link
@@ -98,8 +127,15 @@ export default function BottleCard({
             </Link>
           )}
         </div>
-        <div>{bottle.statedAge ? `Aged ${bottle.statedAge} years` : null}</div>
-      </div>
-    </div>
+      }
+      brand={
+        <Link to={`/entities/${bottle.brand.id}`} className="hover:underline">
+          {bottle.brand.name}
+        </Link>
+      }
+      statedAge={bottle.statedAge ? `Aged ${bottle.statedAge} years` : null}
+      color={color}
+      noGutter={noGutter}
+    />
   );
 }

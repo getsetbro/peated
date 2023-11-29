@@ -3,19 +3,18 @@ import { EllipsisVerticalIcon } from "@heroicons/react/20/solid";
 import {
   ChatBubbleLeftRightIcon,
   HandThumbUpIcon,
-  ShareIcon,
 } from "@heroicons/react/24/outline";
 import { Link } from "@remix-run/react";
 import { useState } from "react";
 
-import type { Tasting } from "@peated/shared/types";
-import useApi from "~/hooks/useApi";
+import type { Tasting } from "@peated/server/types";
 import useAuth from "~/hooks/useAuth";
-import classNames from "~/lib/classNames";
+import { trpc } from "~/lib/trpc";
 import BottleCard from "./bottleCard";
 import Button from "./button";
 import { ImageModal } from "./imageModal";
 import { StaticRating } from "./rating";
+import ShareButton from "./shareButton";
 import Tags from "./tags";
 import TimeSince from "./timeSince";
 import UserAvatar from "./userAvatar";
@@ -35,9 +34,11 @@ export default function TastingListItem({
   hideNotes?: boolean;
   noCommentAction?: boolean;
 }) {
-  const api = useApi();
   const { bottle } = tasting;
   const { user } = useAuth();
+
+  const tastingDeleteMutation = trpc.tastingDelete.useMutation();
+  const toastCreateMutation = trpc.toastCreate.useMutation();
 
   const [imageOpen, setImageOpen] = useState(false);
 
@@ -47,10 +48,10 @@ export default function TastingListItem({
     tasting.toasts + (hasToasted && !tasting.hasToasted ? 1 : 0);
 
   return (
-    <li className={classNames("card p-2 ring-1 ring-inset ring-slate-800")}>
+    <li className="card p-2 ring-1 ring-inset ring-slate-800">
       <div className="card-header p-3 sm:px-5 sm:py-4">
         <UserAvatar size={48} user={tasting.createdBy} />
-        <div className="flex-1 space-y-1 font-semibold">
+        <div className="flex-auto space-y-1 font-semibold">
           <Link
             to={`/users/${tasting.createdBy.username}`}
             className="truncate hover:underline"
@@ -104,7 +105,7 @@ export default function TastingListItem({
                 />
               }
               onClick={async () => {
-                await api.post(`/tastings/${tasting.id}/toasts`);
+                await toastCreateMutation.mutateAsync(tasting.id);
                 setHasToasted(true);
                 onToast && onToast(tasting);
               }}
@@ -133,20 +134,12 @@ export default function TastingListItem({
               {tasting.comments.toLocaleString()}
             </Button>
           )}
-          <Button
-            icon={<ShareIcon className="-ml-0.5 h-5 w-5" aria-hidden="true" />}
-            onClick={() => {
-              if (navigator.share) {
-                navigator
-                  .share({
-                    title: `${tasting.bottle.fullName} - Tasting Notes by ${tasting.createdBy.username}`,
-                    text: `Notes and review by ${tasting.createdBy.username}`,
-                    url: `/tastings/${tasting.id}`,
-                  })
-                  .catch((error) => console.error("Error sharing", error));
-              }
-            }}
+
+          <ShareButton
+            title={`${tasting.bottle.fullName} - Tasting Notes by ${tasting.createdBy.username}`}
+            url={`/tastings/${tasting.id}`}
           />
+
           {(user?.admin || isTaster) && (
             <Menu as="div" className="menu">
               <Menu.Button as={Button}>
@@ -164,7 +157,7 @@ export default function TastingListItem({
                     <Menu.Item
                       as="button"
                       onClick={async () => {
-                        await api.delete(`/tastings/${tasting.id}`);
+                        await tastingDeleteMutation.mutateAsync(tasting.id);
                         if (onDelete) onDelete(tasting);
                         else location.reload();
                       }}

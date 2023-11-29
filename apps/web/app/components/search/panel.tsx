@@ -1,13 +1,11 @@
 import { PlusIcon } from "@heroicons/react/20/solid";
+import { toTitleCase } from "@peated/server/lib/strings";
+import type { Bottle, Entity, User } from "@peated/server/types";
 import { Link, useLocation, useNavigate } from "@remix-run/react";
 import { useEffect, useState } from "react";
-
-import { toTitleCase } from "@peated/shared/lib/strings";
-
-import type { Bottle, Entity, User } from "@peated/shared/types";
-import useApi from "~/hooks/useApi";
 import useAuth from "~/hooks/useAuth";
 import { debounce } from "~/lib/api";
+import { trpc } from "~/lib/trpc";
 import Header from "../header";
 import Layout from "../layout";
 import ListItem from "../listItem";
@@ -23,7 +21,6 @@ export type Props = {
 
 export default function SearchPanel({ onClose, onQueryChange }: Props) {
   const { user } = useAuth();
-  const api = useApi();
   const navigate = useNavigate();
   const location = useLocation();
   const qs = new URLSearchParams(location.search);
@@ -40,6 +37,8 @@ export default function SearchPanel({ onClose, onQueryChange }: Props) {
   const [entityResults, setEntityResults] = useState<readonly Entity[]>([]);
   const isUserQuery = query.indexOf("@") !== -1;
 
+  const trpcUtils = trpc.useUtils();
+
   // TODO: handle errors
   const fetch = debounce(async (query: string) => {
     // union results from various apis
@@ -48,29 +47,39 @@ export default function SearchPanel({ onClose, onQueryChange }: Props) {
     // - bottles
     // - entities
     // (but prioritize exact matches)
+    // trpc.useQueries(t => {
+
+    // })
+    const promises = [];
     if (directToTasting) {
       setUserResults([]);
       setEntityResults([]);
-      await api
-        .get("/bottles", {
-          query: { query, limit: maxResults },
-        })
-        .then(({ results }: { results: readonly Bottle[] }) => {
-          setBottleResults(results);
-          if (state !== "ready") setState("ready");
-        });
+      promises.push(
+        trpcUtils.bottleList
+          .fetch({
+            query,
+            limit: maxResults,
+          })
+          .then(({ results }) => {
+            setBottleResults(results);
+            if (state !== "ready") setState("ready");
+          }),
+      );
     } else if (isUserQuery) {
       setBottleResults([]);
       setEntityResults([]);
       if (user) {
-        await api
-          .get("/users", {
-            query: { query, limit: maxResults },
-          })
-          .then(({ results }: { results: readonly User[] }) => {
-            setUserResults(results);
-            if (state !== "ready") setState("ready");
-          });
+        promises.push(
+          trpcUtils.userList
+            .fetch({
+              query,
+              limit: maxResults,
+            })
+            .then(({ results }) => {
+              setUserResults(results);
+              if (state !== "ready") setState("ready");
+            }),
+        );
       } else {
         setUserResults([]);
         setState("ready");
@@ -78,31 +87,32 @@ export default function SearchPanel({ onClose, onQueryChange }: Props) {
     } else {
       setUserResults([]);
       if (user && query) {
-        await api
-          .get("/users", {
-            query: { query, limit: maxResults },
-          })
-          .then(({ results }: { results: readonly User[] }) => {
-            setUserResults(results);
-            if (state !== "ready") setState("ready");
-          });
+        promises.push(
+          trpcUtils.userList
+            .fetch({ query, limit: maxResults })
+            .then(({ results }) => {
+              setUserResults(results);
+              if (state !== "ready") setState("ready");
+            }),
+        );
       }
-      await api
-        .get("/bottles", {
-          query: { query, limit: maxResults },
-        })
-        .then(({ results }: { results: readonly Bottle[] }) => {
-          setBottleResults(results);
-          if (state !== "ready") setState("ready");
-        });
-      await api
-        .get("/entities", {
-          query: { query, limit: maxResults },
-        })
-        .then(({ results }: { results: readonly Entity[] }) => {
-          setEntityResults(results);
-          if (state !== "ready") setState("ready");
-        });
+      promises.push(
+        trpcUtils.bottleList
+          .fetch({ query, limit: maxResults })
+          .then(({ results }) => {
+            setBottleResults(results);
+            if (state !== "ready") setState("ready");
+          }),
+      );
+      promises.push(
+        trpcUtils.entityList
+          .fetch({ query, limit: maxResults })
+          .then(({ results }) => {
+            setEntityResults(results);
+            if (state !== "ready") setState("ready");
+          }),
+      );
+      await Promise.all(promises);
     }
   }, 300);
 
@@ -133,7 +143,10 @@ export default function SearchPanel({ onClose, onQueryChange }: Props) {
           exactMatches.push(index);
         }
       } else {
-        if (value.ref.displayName.toLowerCase() === lowerQuery) {
+        if (
+          value.ref.displayName?.toLowerCase() === lowerQuery ||
+          value.ref.username.toLowerCase() === lowerQuery
+        ) {
           exactMatches.push(index);
         }
       }
@@ -199,7 +212,7 @@ export default function SearchPanel({ onClose, onQueryChange }: Props) {
                 <ListItem color="highlight">
                   <PlusIcon className="hidden h-12 w-12 flex-none rounded-full p-2 sm:block" />
 
-                  <div className="min-w-0 flex-1">
+                  <div className="min-w-0 flex-auto">
                     <div className="font-semibold leading-6">
                       <Link to={`/addBottle`}>
                         <span className="absolute inset-x-0 -top-px bottom-0" />

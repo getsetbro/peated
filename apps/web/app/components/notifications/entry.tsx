@@ -1,5 +1,5 @@
 import { XMarkIcon } from "@heroicons/react/20/solid";
-import type { Notification } from "@peated/shared/types";
+import type { Notification } from "@peated/server/types";
 import { Link, useNavigate } from "@remix-run/react";
 import type { FriendRequestNotification } from "~/types";
 import classNames from "../../lib/classNames";
@@ -33,18 +33,22 @@ export default function NotificationEntry({
           : undefined
       }
     >
-      <div className="flex flex-1 items-start">
+      <div className="flex flex-auto items-start">
         <div className="flex-shrink-0 self-center">
           <UserAvatar user={notification.fromUser} size={32} />
         </div>
-        <div className="ml-3 flex w-0 flex-1 flex-col">
-          <div className="flex flex-1">
-            <div className="flex flex-1 flex-col justify-center">
+        <div className="ml-3 flex w-0 flex-auto flex-col">
+          <div className="flex flex-auto">
+            <div className="flex flex-auto flex-col justify-center">
               <div className="text-sm">
                 {notification.fromUser && (
                   <Link
                     to={`/users/${notification.fromUser.username}`}
-                    className="mr-1 font-semibold"
+                    className="mr-1 font-semibold hover:underline"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate(`/users/${notification.fromUser?.username}`);
+                    }}
                   >
                     {notification.fromUser.displayName}
                   </Link>
@@ -78,7 +82,7 @@ export default function NotificationEntry({
 const getLink = ({ notification }: { notification: Notification }) => {
   switch (notification.type) {
     case "friend_request":
-      return `/users/${notification.objectId}`;
+      return `/users/${notification.fromUser?.username}`;
     case "comment":
     case "toast":
       if (notification.ref) return `/tastings/${notification.ref.id}`;

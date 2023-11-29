@@ -1,33 +1,27 @@
 import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
-
-import Layout from "~/components/layout";
-import { redirectToAuth } from "~/lib/auth.server";
-
 import { json } from "@remix-run/node";
-import { Link } from "@remix-run/react";
-import { QueryClient, dehydrate, useQuery } from "@tanstack/react-query";
-
+import { Link, useLoaderData } from "@remix-run/react";
 import { type SitemapFunction } from "remix-sitemap";
 import Button from "~/components/button";
 import EmptyActivity from "~/components/emptyActivity";
+import Layout from "~/components/layout";
 import ListItem from "~/components/listItem";
-import LoadingIndicator from "~/components/loadingIndicator";
 import SimpleHeader from "~/components/simpleHeader";
-import useApi from "~/hooks/useApi";
-import { fetchFlights } from "~/queries/flights";
-import { fetchFriends } from "~/queries/friends";
+import { redirectToAuth } from "~/lib/auth.server";
 
 export const sitemap: SitemapFunction = () => ({
   exclude: true,
 });
 
-export async function loader({ request, context }: LoaderFunctionArgs) {
-  if (!context.user) return redirectToAuth({ request });
+export async function loader({
+  request,
+  context: { user, trpc },
+}: LoaderFunctionArgs) {
+  if (!user) return redirectToAuth({ request });
 
-  const queryClient = new QueryClient();
-  await queryClient.prefetchQuery(["friends"], () => fetchFriends(context.api));
-
-  return json({ dehydratedState: dehydrate(queryClient) });
+  return json({
+    flightList: await trpc.flightList.query(),
+  });
 }
 
 export const meta: MetaFunction = () => {
@@ -38,18 +32,12 @@ export const meta: MetaFunction = () => {
   ];
 };
 
-export default function Friends() {
-  const api = useApi();
+export default function Flights() {
+  const { flightList } = useLoaderData<typeof loader>();
 
-  const { data, isLoading } = useQuery(["flights"], () => fetchFlights(api), {
-    staleTime: 5 * 60 * 1000,
-  });
+  if (!flightList) return <div>Error</div>;
 
-  if (isLoading) return <LoadingIndicator />;
-
-  if (!data) return <div>Error</div>;
-
-  const { results, rel } = data;
+  const { results, rel } = flightList;
 
   return (
     <Layout>
@@ -59,8 +47,8 @@ export default function Friends() {
           results.map((flight) => {
             return (
               <ListItem key={flight.id}>
-                <div className="flex flex-1 items-center space-x-4">
-                  <div className="flex-1 space-y-1 font-medium">
+                <div className="flex flex-auto items-center space-x-4">
+                  <div className="flex-auto space-y-1 font-medium">
                     <Link
                       to={`/flights/${flight.id}`}
                       className="hover:underline"
@@ -93,16 +81,16 @@ export default function Friends() {
           className="flex items-center justify-between py-3"
           aria-label="Pagination"
         >
-          <div className="flex flex-1 justify-between gap-x-2 sm:justify-end">
+          <div className="flex flex-auto justify-between gap-x-2 sm:justify-end">
             <Button
-              to={rel.prevPage ? `?page=${rel.prevPage}` : undefined}
-              disabled={!rel.prevPage}
+              to={rel.prevCursor ? `?cursor=${rel.prevCursor}` : undefined}
+              disabled={!rel.prevCursor}
             >
               Previous
             </Button>
             <Button
-              to={rel.nextPage ? `?page=${rel.nextPage}` : undefined}
-              disabled={!rel.nextPage}
+              to={rel.nextCursor ? `?cursor=${rel.nextCursor}` : undefined}
+              disabled={!rel.nextCursor}
             >
               Next
             </Button>

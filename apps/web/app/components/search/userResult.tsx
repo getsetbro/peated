@@ -1,5 +1,5 @@
 import { AtSymbolIcon } from "@heroicons/react/20/solid";
-import type { User } from "@peated/shared/types";
+import type { User } from "@peated/server/types";
 import { Link } from "@remix-run/react";
 import Chip from "../chip";
 import UserAvatar from "../userAvatar";
@@ -21,7 +21,7 @@ export default function UserResultRow({
       </div>
 
       <div className="flex min-w-0 flex-auto">
-        <div className="flex-1">
+        <div className="flex-auto">
           <Link
             to={`/users/${user.username}`}
             className="font-semibold leading-6"

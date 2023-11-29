@@ -13,7 +13,7 @@ const Tabs = ({ fullWidth, border, ...props }: Props) => {
     <nav
       className={classNames(
         "-mb-px flex space-x-8",
-        fullWidth ? "[&>*]:flex-1 [&>*]:justify-center" : "",
+        fullWidth ? "[&>*]:flex-auto [&>*]:justify-center" : "",
         border ? "border-b border-slate-700" : "",
       )}
       aria-label="Tabs"
@@ -22,7 +22,7 @@ const Tabs = ({ fullWidth, border, ...props }: Props) => {
   );
 };
 
-type ItemProps<E extends ElementType> = PolymorphicProps<E> & {
+type ItemProps = {
   active?: boolean;
   count?: number;
   controlled?: boolean;
@@ -37,7 +37,7 @@ Tabs.Item = function TabItem<E extends ElementType = typeof defaultElement>({
   children,
   controlled,
   ...props
-}: ItemProps<E>) {
+}: PolymorphicProps<E, ItemProps>) {
   const Component = as ?? defaultElement;
 
   const location = useLocation();

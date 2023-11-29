@@ -3,128 +3,37 @@ import {
   EllipsisVerticalIcon,
   StarIcon as StarIconFilled,
 } from "@heroicons/react/20/solid";
-import { ShareIcon, StarIcon } from "@heroicons/react/24/outline";
+import { StarIcon } from "@heroicons/react/24/outline";
+import type { Bottle } from "@peated/server/types";
 import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Link, Outlet, useLoaderData, useNavigate } from "@remix-run/react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Fragment } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import invariant from "tiny-invariant";
-
-import type { Bottle } from "@peated/shared/types";
-import RobotImage from "~/assets/robot.png";
 import BottleIcon from "~/components/assets/Bottle";
-import BetaNotice from "~/components/betaNotice";
 import BottleMetadata from "~/components/bottleMetadata";
 import Button from "~/components/button";
 import { ClientOnly } from "~/components/clientOnly";
-import Collapsable from "~/components/collapsable";
 import ConfirmationButton from "~/components/confirmationButton";
-import { DistributionChart } from "~/components/distributionChart";
 import Layout from "~/components/layout";
-import Markdown from "~/components/markdown";
 import QueryBoundary from "~/components/queryBoundary";
 import { RangeBarChart } from "~/components/rangeBarChart.client";
+import ShareButton from "~/components/shareButton";
 import SkeletonButton from "~/components/skeletonButton";
 import Tabs from "~/components/tabs";
 import TimeSince from "~/components/timeSince";
-import useApi from "~/hooks/useApi";
 import useAuth from "~/hooks/useAuth";
 import { summarize } from "~/lib/markdown";
 import { formatCategoryName } from "~/lib/strings";
-import {
-  fetchBottlePriceHistory,
-  fetchBottlePrices,
-  fetchBottleTags,
-  getBottle,
-} from "~/queries/bottles";
-import {
-  favoriteBottle,
-  fetchCollections,
-  unfavoriteBottle,
-} from "~/queries/collections";
+import { trpc } from "~/lib/trpc";
 
-const CollectionAction = ({ bottle }: { bottle: Bottle }) => {
-  const api = useApi();
-
-  const { data: isCollected, isLoading } = useQuery(
-    ["bottles", bottle.id, "isCollected"],
-    async () => {
-      const res = await fetchCollections(api, "me", {
-        bottle: bottle.id,
-      });
-      return res.results.length > 0;
-    },
-  );
-
-  const queryClient = useQueryClient();
-  const collectBottle = useMutation({
-    mutationFn: async (collect: boolean) => {
-      if (!collect) {
-        return await unfavoriteBottle(api, bottle.id);
-      } else {
-        return await favoriteBottle(api, bottle.id);
-      }
-    },
-    onSuccess: (newData) => {
-      queryClient.setQueryData(["bottles", bottle.id, "isCollected"], newData);
-    },
-  });
-
-  if (isCollected === undefined) return null;
-
-  return (
-    <>
-      <Button
-        onClick={async () => {
-          await collectBottle.mutateAsync(!isCollected);
-        }}
-        disabled={isLoading}
-        color="primary"
-      >
-        {isCollected ? (
-          <StarIconFilled
-            className="text-highlight h-4 w-4"
-            aria-hidden="true"
-          />
-        ) : (
-          <StarIcon className="h-4 w-4" aria-hidden="true" />
-        )}
-      </Button>
-    </>
-  );
-};
-
-const BottleTagDistribution = ({ bottleId }: { bottleId: number }) => {
-  const api = useApi();
-
-  const { data } = useQuery(["bottles", bottleId, "tags"], () =>
-    fetchBottleTags(api, bottleId),
-  );
-
-  if (!data) return null;
-
-  const { results, totalCount } = data;
-
-  if (!results.length) return null;
-
-  return (
-    <DistributionChart
-      items={results.map((t) => ({
-        name: t.tag,
-        count: t.count,
-        tag: t.tag,
-      }))}
-      totalCount={totalCount}
-      to={(item) => `/bottles?tag=${encodeURIComponent(item.name)}`}
-    />
-  );
-};
-
-export async function loader({ params, context }: LoaderFunctionArgs) {
+export async function loader({
+  params,
+  context: { trpc },
+}: LoaderFunctionArgs) {
   invariant(params.bottleId);
 
-  const bottle = await getBottle(context.api, params.bottleId);
+  const bottle = await trpc.bottleById.query(Number(params.bottleId));
 
   return json({ bottle });
 }
@@ -159,7 +68,6 @@ export const meta: MetaFunction<typeof loader> = ({ data }) => {
 
 export default function BottleDetails() {
   const { user } = useAuth();
-  const api = useApi();
   const navigate = useNavigate();
 
   const { bottle } = useLoaderData<typeof loader>();
@@ -167,38 +75,47 @@ export default function BottleDetails() {
   const stats = [
     {
       name: "Avg Rating",
-      value: Math.round(bottle.avgRating * 100) / 100,
+      value:
+        bottle.avgRating !== null
+          ? Math.round(bottle.avgRating * 100) / 100
+          : "",
     },
     { name: "Tastings", value: bottle.totalTastings.toLocaleString() },
     { name: "People", value: bottle.people.toLocaleString() },
   ];
 
+  const deleteBottleMutation = trpc.bottleDelete.useMutation();
   const deleteBottle = async () => {
     // TODO: show confirmation message
-    await api.delete(`/bottles/${bottle.id}`);
+    await deleteBottleMutation.mutateAsync(bottle.id);
     navigate("/");
   };
 
+  const baseUrl = `/bottles/${bottle.id}`;
+
   return (
     <Layout>
-      <div className="p-3 sm:py-0">
-        <div className="my-4 flex min-w-full flex-wrap gap-x-3 gap-y-4 sm:flex-nowrap">
-          <BottleIcon className="hidden h-14 w-auto sm:inline-block" />
-          <div className="w-full flex-1 flex-col items-center sm:w-auto sm:items-start">
+      <div className="w-full p-3 lg:py-0">
+        <div className="my-4 flex w-full flex-wrap justify-center gap-x-3 gap-y-4 lg:flex-nowrap lg:justify-start">
+          <div className="hidden w-14 lg:block">
+            <BottleIcon className="w-14" />
+          </div>
+
+          <div className="flex flex-auto flex-col items-center justify-center truncate lg:w-auto lg:items-start">
             <h1
-              className="mx-auto max-w-[260px] truncate text-center text-3xl font-semibold sm:mx-0 sm:max-w-[480px] sm:text-left"
+              className="max-w-full truncate text-center text-3xl font-semibold lg:mx-0 lg:text-left"
               title={bottle.fullName}
             >
               {bottle.fullName}
             </h1>
             <BottleMetadata
               data={bottle}
-              className="text-center text-sm text-slate-500 sm:text-left"
+              className="w-full truncate text-center text-slate-500 lg:text-left"
             />
           </div>
 
           {(bottle.category || bottle.statedAge) && (
-            <div className="flex w-full flex-col items-center justify-center gap-x-1 text-sm text-slate-500 sm:w-auto sm:items-end">
+            <div className="flex w-full min-w-[150px] flex-col items-center justify-center gap-x-1 text-slate-500 lg:w-auto lg:items-end">
               <div>
                 {bottle.category && (
                   <Link
@@ -217,7 +134,7 @@ export default function BottleDetails() {
           )}
         </div>
 
-        <div className="my-8 flex justify-center gap-4 sm:justify-start">
+        <div className="my-8 flex justify-center gap-4 lg:justify-start">
           {user && (
             <ClientOnly fallback={<SkeletonButton className="w-10" />}>
               {() => (
@@ -235,19 +152,7 @@ export default function BottleDetails() {
             Record a Tasting
           </Button>
 
-          <Button
-            icon={<ShareIcon className="-ml-0.5 h-5 w-5" aria-hidden="true" />}
-            onClick={() => {
-              if (navigator.share) {
-                navigator
-                  .share({
-                    title: bottle.fullName,
-                    url: `/bottles/${bottle.id}`,
-                  })
-                  .catch((error) => console.error("Error sharing", error));
-              }
-            }}
-          />
+          <ShareButton title={bottle.fullName} url={`/bottles/${bottle.id}`} />
 
           {user?.mod && (
             <Menu as="div" className="menu">
@@ -262,7 +167,11 @@ export default function BottleDetails() {
                   Edit Bottle
                 </Menu.Item>
                 {user.admin && (
-                  <Menu.Item as={ConfirmationButton} onContinue={deleteBottle}>
+                  <Menu.Item
+                    as={ConfirmationButton}
+                    onContinue={deleteBottle}
+                    disabled={deleteBottleMutation.isLoading}
+                  >
                     Delete Bottle
                   </Menu.Item>
                 )}
@@ -271,189 +180,117 @@ export default function BottleDetails() {
           )}
         </div>
 
-        <ClientOnly
-          fallback={
-            <div
-              className="mb-4 animate-pulse bg-slate-800"
-              style={{ height: 200 }}
-            />
-          }
-        >
-          {() => (
-            <QueryBoundary
-              fallback={
-                <div
-                  className="mb-4 animate-pulse bg-slate-800"
-                  style={{ height: 200 }}
-                />
-              }
-              loading={<Fragment />}
-            >
-              <BottleTagDistribution bottleId={bottle.id} />
-            </QueryBoundary>
-          )}
-        </ClientOnly>
-
-        <div className="my-6 grid grid-cols-3 items-center gap-3 text-center sm:text-left">
+        <div className="my-6 grid grid-cols-3 items-center gap-3 text-center lg:grid-cols-4 lg:text-left">
           {stats.map((stat) => (
             <div key={stat.name}>
               <div className="text-light leading-7">{stat.name}</div>
-              <div className="order-first text-3xl font-semibold tracking-tight sm:text-5xl">
-                {stat.value}
+              <div className="order-first text-3xl font-semibold tracking-tight lg:text-5xl">
+                {stat.value || "-"}
               </div>
             </div>
           ))}
-        </div>
-      </div>
-
-      {bottle.description && (
-        <div className="flex">
-          <div className="flex-1">
-            <Tabs fullWidth border>
-              <Tabs.Item active>About</Tabs.Item>
-            </Tabs>
-            <div className="my-6">
-              <div className="mt-5 flex space-x-4">
-                <Collapsable mobileOnly>
-                  <div className="prose prose-invert -mt-5 max-w-none flex-1">
-                    <Markdown content={bottle.description} />
-                  </div>
-                  {bottle.tastingNotes && (
-                    <>
-                      <h3 className="text-highlight text-lg font-bold">
-                        Tasting Notes
-                      </h3>
-                      <div className="prose prose-invert max-w-none flex-1">
-                        <dl>
-                          <dt>Nose</dt>
-                          <dd>{bottle.tastingNotes.nose}</dd>
-                          <dt>Palate</dt>
-                          <dd>{bottle.tastingNotes.palate}</dd>
-                          <dt>Finish</dt>
-                          <dd>{bottle.tastingNotes.finish}</dd>
-                        </dl>
-                      </div>
-                    </>
-                  )}
-                </Collapsable>
-
-                <img src={RobotImage} className="hidden h-40 w-40 sm:block" />
-              </div>
+          <div className="hidden lg:block">
+            <div className="text-light leading-7">Price</div>
+            <div className="flex items-center">
+              <ClientOnly fallback={<div className="h-[45px] animate-pulse" />}>
+                {() => <BottlePriceHistory bottleId={bottle.id} />}
+              </ClientOnly>
             </div>
           </div>
         </div>
-      )}
-
-      <div className="flex">
-        <div className="flex-1">
-          <Tabs fullWidth border>
-            <Tabs.Item as={Link} to={`/bottles/${bottle.id}`} controlled>
-              Activity
-            </Tabs.Item>
-          </Tabs>
-
-          <Outlet context={{ bottle }} />
-
-          {bottle.createdBy && (
-            <div className="mt-8 text-center text-sm text-slate-500 sm:text-left">
-              This bottle was first added by{" "}
-              <Link
-                to={`/users/${bottle.createdBy.username}`}
-                className="font-medium hover:underline"
-              >
-                {bottle.createdBy.displayName}
-              </Link>{" "}
-              {bottle.createdAt && <TimeSince date={bottle.createdAt} />}
-            </div>
-          )}
-        </div>
-        <div className="ml-4 hidden w-[200px] sm:block">
-          <ClientOnly fallback={<BottlePricesSkeleton />}>
-            {() => (
-              <QueryBoundary loading={<BottlePricesSkeleton />}>
-                <BottlePrices bottleId={bottle.id} />
-              </QueryBoundary>
-            )}
-          </ClientOnly>
-        </div>
       </div>
+
+      <Tabs fullWidth border>
+        <Tabs.Item as={Link} to={baseUrl} controlled>
+          Overview
+        </Tabs.Item>
+        <Tabs.Item as={Link} to={`${baseUrl}/tastings`} controlled>
+          Tastings ({bottle.totalTastings.toLocaleString()})
+        </Tabs.Item>
+        <Tabs.Item as={Link} to={`${baseUrl}/prices`} controlled>
+          Prices
+        </Tabs.Item>
+      </Tabs>
+
+      <Outlet context={{ bottle }} />
+
+      {bottle.createdBy && (
+        <div className="mt-8 text-center text-sm text-slate-500 sm:text-left">
+          This bottle was first added by{" "}
+          <Link
+            to={`/users/${bottle.createdBy.username}`}
+            className="font-medium hover:underline"
+          >
+            {bottle.createdBy.displayName}
+          </Link>{" "}
+          {bottle.createdAt && <TimeSince date={bottle.createdAt} />}
+        </div>
+      )}
     </Layout>
   );
 }
 
-function BottlePricesSkeleton() {
-  return (
-    <div>
-      <Tabs fullWidth>
-        <Tabs.Item active>Prices</Tabs.Item>
-      </Tabs>
-      <div
-        className="mt-4 animate-pulse bg-slate-800"
-        style={{ height: 200 }}
-      />
-    </div>
-  );
-}
-
 function BottlePriceHistory({ bottleId }: { bottleId: number }) {
-  const api = useApi();
-  const { data, isLoading } = useQuery(
-    ["bottles", bottleId, "priceHistory"],
-    () => fetchBottlePriceHistory(api, bottleId),
-  );
+  const { data, isLoading } = trpc.bottlePriceHistory.useQuery({
+    bottle: bottleId,
+  });
 
-  if (isLoading) return <div className="h-6 animate-pulse" />;
+  if (isLoading) return <div className="h-[45px] animate-pulse" />;
 
-  if (!data) return null;
+  if (!data) return <div className="h-[45px] animate-pulse" />;
 
   const points = data.results.reverse().map((r, idx) => {
     return { time: idx, high: r.maxPrice, low: r.minPrice, avg: r.avgPrice };
   });
 
-  return <RangeBarChart data={points} width={200} height={100} />;
+  return <RangeBarChart data={points} width={200} height={45} />;
 }
 
-function BottlePrices({ bottleId }: { bottleId: number }) {
-  const api = useApi();
-  const { data } = useQuery(["bottles", bottleId, "prices"], () =>
-    fetchBottlePrices(api, bottleId),
+const CollectionAction = ({ bottle }: { bottle: Bottle }) => {
+  const { data: isCollected, isLoading } = trpc.collectionList.useQuery(
+    {
+      bottle: bottle.id,
+      user: "me",
+    },
+    {
+      select: (data) => data.results.length > 0,
+    },
   );
 
-  if (!data) return null;
+  const queryClient = useQueryClient();
+  const favoriteBottleMutation = trpc.collectionBottleCreate.useMutation();
+  const unfavoriteBottleMutation = trpc.collectionBottleDelete.useMutation();
+
+  if (isCollected === undefined) return null;
+
   return (
-    <div>
-      <Tabs fullWidth>
-        <Tabs.Item active>Prices</Tabs.Item>
-      </Tabs>
-
-      <div className="mt-4">
-        <BetaNotice>This is a work in progress.</BetaNotice>
-
-        <ClientOnly fallback={<div className="h-6 animate-pulse" />}>
-          {() => <BottlePriceHistory bottleId={bottleId} />}
-        </ClientOnly>
-
-        {data.results.length ? (
-          <ul className="mt-4 space-y-2 text-sm">
-            {data.results.map((price) => {
-              return (
-                <li key={price.id}>
-                  <a href={price.url} className="flex hover:underline">
-                    <span className="flex-1">{price.store?.name}</span>
-                    <span>${(price.price / 100).toFixed(2)}</span>
-                  </a>
-                  <span className="text-light text-xs">
-                    {price.volume}mL &mdash;{" "}
-                    <TimeSince date={price.updatedAt} />
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
+    <>
+      <Button
+        onClick={async () => {
+          isCollected
+            ? unfavoriteBottleMutation.mutateAsync({
+                bottle: bottle.id,
+                user: "me",
+                collection: "default",
+              })
+            : favoriteBottleMutation.mutateAsync({
+                bottle: bottle.id,
+                user: "me",
+                collection: "default",
+              });
+        }}
+        disabled={isLoading}
+        color="primary"
+      >
+        {isCollected ? (
+          <StarIconFilled
+            className="text-highlight h-4 w-4"
+            aria-hidden="true"
+          />
         ) : (
-          <p className="mt-4 text-center text-sm">No sellers found.</p>
+          <StarIcon className="h-4 w-4" aria-hidden="true" />
         )}
-      </div>
-    </div>
+      </Button>
+    </>
   );
-}
+};

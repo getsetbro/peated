@@ -1,40 +1,37 @@
+import { TRPCClientError } from "@trpc/client";
 import { Authenticator } from "remix-auth";
 import { FormStrategy } from "remix-auth-form";
-import config from "~/config";
-
-import { ApiClient, ApiError } from "~/lib/api";
 import { sessionStorage } from "~/services/session.server";
 import type { SessionPayload } from "~/types";
 
-export const authenticator = new Authenticator<SessionPayload>(sessionStorage);
-
-const api = new ApiClient({ server: config.API_SERVER });
+export const authenticator = new Authenticator<SessionPayload | null>(
+  sessionStorage,
+);
 
 authenticator.use(
-  new FormStrategy(async ({ form }) => {
-    const email = form.get("email");
-    const password = form.get("password");
-    const code = form.get("code");
+  new FormStrategy(async ({ form, context }) => {
+    if (!context) throw new Error("Where da context?");
+    const { trpc } = context;
+    const email = form.get("email") as string;
+    const password = form.get("password") as string;
+    const code = form.get("code") as string;
 
     try {
       const session = code
-        ? await api.post("/auth/google", {
-            data: {
-              code: code,
-            },
+        ? await trpc.authGoogle.mutate({
+            code,
           })
-        : await api.post("/auth/basic", {
-            data: {
-              email,
-              password,
-            },
+        : await trpc.authBasic.mutate({
+            email,
+            password,
           });
 
       return session;
     } catch (err) {
-      if (err instanceof ApiError && err.statusCode === 401) {
+      if (err instanceof TRPCClientError && err.data.code === "UNAUTHORIZED") {
         return null;
       }
+      console.error({ err });
       throw err;
     }
   }),

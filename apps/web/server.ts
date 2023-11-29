@@ -1,6 +1,11 @@
 import prom from "@isaacs/express-prometheus-middleware";
+import { sentryLink } from "@peated/server/src/lib/trpc";
+import { type AppRouter } from "@peated/server/trpc/router";
 import { createRequestHandler } from "@remix-run/express";
+import { type AppLoadContext } from "@remix-run/server-runtime";
+import * as Sentry from "@sentry/remix";
 import { wrapExpressCreateRequestHandler } from "@sentry/remix";
+import { createTRPCProxyClient, httpBatchLink } from "@trpc/client";
 import compression from "compression";
 import type { Request } from "express";
 import express from "express";
@@ -14,9 +19,6 @@ import {
   getUser,
   logout,
 } from "~/services/session.server";
-
-import * as Sentry from "@sentry/remix";
-
 import packageData from "./package.json";
 
 Sentry.init({
@@ -27,6 +29,7 @@ Sentry.init({
     new Sentry.Integrations.Http({ tracing: true }),
     ...Sentry.autoDiscoverNodePerformanceMonitoringIntegrations(),
   ],
+  spotlight: config.ENV === "development",
   // tracePropagationTargets: ["localhost", "peated.com", config.API_SERVER],
 });
 
@@ -97,11 +100,18 @@ app.all("*", async (req, res, next) => {
   const user = await getUser(session);
   const accessToken = await getAccessToken(session);
 
-  Sentry.setUser({
-    id: `${user?.id}`,
-    username: user?.username,
-    email: user?.email,
-  });
+  Sentry.setUser(
+    user
+      ? {
+          id: `${user?.id}`,
+          username: user?.username,
+          email: user?.email,
+          ip_address: req.ip,
+        }
+      : {
+          ip_address: req.ip,
+        },
+  );
 
   req.user = user || null;
   req.accessToken = accessToken || null;
@@ -117,11 +127,26 @@ app.all("*", async (req, res, next) => {
   next();
 });
 
-function getLoadContext(req: Request) {
+function getLoadContext(req: Request): AppLoadContext {
+  const trpc = createTRPCProxyClient<AppRouter>({
+    links: [
+      sentryLink(Sentry.captureException),
+      httpBatchLink({
+        url: `${config.API_SERVER}/trpc`,
+        async headers() {
+          return {
+            authorization: req.accessToken ? `Bearer ${req.accessToken}` : "",
+          };
+        },
+      }),
+    ],
+  });
+
   return {
     api: req.api,
     user: req.user,
     accessToken: req.accessToken,
+    trpc,
   };
 }
 

@@ -53,6 +53,7 @@ Sentry.init({
       // showEmail: false,
       themeLight: feedbackTheme,
       themeDark: feedbackTheme,
+      autoInject: false,
     }),
   ],
 
@@ -66,3 +67,9 @@ Sentry.setTag("service", packageData.name);
 startTransition(() => {
   hydrateRoot(document, <RemixBrowser />);
 });
+
+if (process.env.NODE_ENV === "development") {
+  import("@spotlightjs/spotlight").then((Spotlight) =>
+    Spotlight.init({ injectImmediately: true }),
+  );
+}

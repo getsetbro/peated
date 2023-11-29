@@ -1,16 +1,16 @@
-import axios from "axios";
+import { makeTRPCClient } from "@peated/server/lib/trpc";
+import { captureException } from "@sentry/node-experimental";
 import config from "~/config";
 
-export async function submitBottle(data: any) {
-  const headers = {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${process.env.ACCESS_TOKEN}`,
-  };
+const trpcClient = makeTRPCClient(
+  config.API_SERVER,
+  process.env.ACCESS_TOKEN,
+  captureException,
+);
 
+export async function submitBottle(data: any) {
   try {
-    await axios.post(`${config.API_SERVER}/bottles`, data, {
-      headers,
-    });
+    await trpcClient.bottleCreate.mutate(data);
   } catch (err: any) {
     const data = err?.response?.data;
     if (!data) {
@@ -28,15 +28,8 @@ export async function submitBottle(data: any) {
 }
 
 export async function submitEntity(data: any) {
-  const headers = {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${process.env.ACCESS_TOKEN}`,
-  };
-
   try {
-    await axios.post(`${config.API_SERVER}/entities`, data, {
-      headers,
-    });
+    await trpcClient.entityCreate.mutate(data);
   } catch (err: any) {
     const data = err?.response?.data;
     if (!data) {
@@ -62,14 +55,10 @@ export type StorePrice = {
 };
 
 export async function submitStorePrices(storeId: number, data: StorePrice[]) {
-  const headers = {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${process.env.ACCESS_TOKEN}`,
-  };
-
   try {
-    await axios.post(`${config.API_SERVER}/stores/${storeId}/prices`, data, {
-      headers,
+    await trpcClient.storePriceCreateBatch.mutate({
+      store: storeId,
+      prices: data,
     });
   } catch (err: any) {
     const data = err?.response?.data;

@@ -1,42 +1,32 @@
-import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
-
-import Layout from "~/components/layout";
-import { redirectToAuth } from "~/lib/auth.server";
-
 import { AtSymbolIcon } from "@heroicons/react/20/solid";
+import type { FriendStatus } from "@peated/server/types";
+import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { Link } from "@remix-run/react";
-import {
-  QueryClient,
-  dehydrate,
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { Link, useLoaderData } from "@remix-run/react";
 import { useState } from "react";
-
-import type { FriendStatus } from "@peated/shared/types";
 import type { SitemapFunction } from "remix-sitemap";
 import Button from "~/components/button";
 import EmptyActivity from "~/components/emptyActivity";
+import Layout from "~/components/layout";
 import ListItem from "~/components/listItem";
-import LoadingIndicator from "~/components/loadingIndicator";
 import SimpleHeader from "~/components/simpleHeader";
 import UserAvatar from "~/components/userAvatar";
-import useApi from "~/hooks/useApi";
-import { fetchFriends } from "~/queries/friends";
+import { redirectToAuth } from "~/lib/auth.server";
+import { trpc } from "~/lib/trpc";
 
 export const sitemap: SitemapFunction = () => ({
   exclude: true,
 });
 
-export async function loader({ context, request }: LoaderFunctionArgs) {
-  if (!context.user) return redirectToAuth({ request });
+export async function loader({
+  request,
+  context: { user, trpc },
+}: LoaderFunctionArgs) {
+  if (!user) return redirectToAuth({ request });
 
-  const queryClient = new QueryClient();
-  await queryClient.prefetchQuery(["friends"], () => fetchFriends(context.api));
-
-  return json({ dehydratedState: dehydrate(queryClient) });
+  return json({
+    friendList: await trpc.friendList.query(),
+  });
 }
 
 export const meta: MetaFunction = () => {
@@ -48,37 +38,26 @@ export const meta: MetaFunction = () => {
 };
 
 export default function Friends() {
-  const api = useApi();
-
-  const { data, isLoading } = useQuery(["friends"], () => fetchFriends(api), {
-    staleTime: 5 * 60 * 1000,
-  });
+  const { friendList } = useLoaderData<typeof loader>();
 
   const [friendStatus, setFriendStatus] = useState<
     Record<string, FriendStatus>
   >(
     Object.fromEntries(
-      data ? data.results.map((r) => [r.user.id, r.status]) : [],
+      friendList ? friendList.results.map((r) => [r.user.id, r.status]) : [],
     ),
   );
 
-  const queryClient = useQueryClient();
-  const toggleFriendship = useMutation({
-    mutationFn: async ({
-      toUserId,
-      active,
-    }: {
-      toUserId: number;
-      active: boolean;
-    }) => {
-      const result = await api[active ? "post" : "delete"](
-        `/friends/${toUserId}`,
-      );
-      return [toUserId, result.status];
+  const friendCreateMutation = trpc.friendCreate.useMutation({
+    onSuccess: (status, toUserId) => {
+      setFriendStatus((state) => ({
+        ...state,
+        [toUserId]: status,
+      }));
     },
-    onSuccess: ([toUserId, status]) => {
-      queryClient.invalidateQueries(["friends"]);
-
+  });
+  const friendDeleteMutation = trpc.friendDelete.useMutation({
+    onSuccess: (status, toUserId) => {
       setFriendStatus((state) => ({
         ...state,
         [toUserId]: status,
@@ -98,11 +77,9 @@ export default function Friends() {
     }
   };
 
-  if (isLoading) return <LoadingIndicator />;
+  if (!friendList) return <div>Error</div>;
 
-  if (!data) return <div>Error</div>;
-
-  const { results, rel } = data;
+  const { results, rel } = friendList;
 
   return (
     <Layout>
@@ -112,9 +89,9 @@ export default function Friends() {
           results.map(({ user, ...friend }) => {
             return (
               <ListItem key={user.id}>
-                <div className="flex flex-1 items-center space-x-4">
+                <div className="flex flex-auto items-center space-x-4">
                   <UserAvatar size={48} user={user} />
-                  <div className="flex-1 space-y-1 font-medium">
+                  <div className="flex-auto space-y-1 font-medium">
                     <Link
                       to={`/users/${user.username}`}
                       className="hover:underline"
@@ -130,10 +107,11 @@ export default function Friends() {
                     <Button
                       color="primary"
                       onClick={() => {
-                        toggleFriendship.mutate({
-                          toUserId: user.id,
-                          active: friendStatus[user.id] === "none",
-                        });
+                        if (friendStatus[user.id] === "friends") {
+                          friendDeleteMutation.mutate(user.id);
+                        } else {
+                          friendCreateMutation.mutate(user.id);
+                        }
                       }}
                     >
                       {actionLabel(friendStatus[user.id])}
@@ -155,16 +133,16 @@ export default function Friends() {
           className="flex items-center justify-between py-3"
           aria-label="Pagination"
         >
-          <div className="flex flex-1 justify-between gap-x-2 sm:justify-end">
+          <div className="flex flex-auto justify-between gap-x-2 sm:justify-end">
             <Button
-              to={rel.prevPage ? `?page=${rel.prevPage}` : undefined}
-              disabled={!rel.prevPage}
+              to={rel.prevCursor ? `?cursor=${rel.prevCursor}` : undefined}
+              disabled={!rel.prevCursor}
             >
               Previous
             </Button>
             <Button
-              to={rel.nextPage ? `?page=${rel.nextPage}` : undefined}
-              disabled={!rel.nextPage}
+              to={rel.nextCursor ? `?cursor=${rel.nextCursor}` : undefined}
+              disabled={!rel.nextCursor}
             >
               Next
             </Button>

@@ -21,6 +21,7 @@ env:
   SENTRY_ORG: "peated"
   SENTRY_PROJECT: "peated"
   API_SERVER: https://api.peated.com
+  URL_PREFIX: https://peated.com
   FATHOM_SITE_ID: "OGNPFEUC"
 jobs:
   build:
@@ -106,6 +107,7 @@ jobs:
           build-args: |
             VERSION=${{ github.sha }}
             API_SERVER=${{ env.API_SERVER }}
+            URL_PREFIX=${{ env.URL_PREFIX }}
             GOOGLE_CLIENT_ID=${{ env.GOOGLE_CLIENT_ID }}
             SENTRY_DSN=${{ env.SENTRY_DSN }}
             SENTRY_ORG=${{ env.SENTRY_ORG }}
@@ -126,6 +128,7 @@ jobs:
           build-args: |
             VERSION=${{ github.sha }}
             API_SERVER=${{ env.API_SERVER }}
+            URL_PREFIX=${{ env.URL_PREFIX }}
             GOOGLE_CLIENT_ID=${{ env.GOOGLE_CLIENT_ID }}
             SENTRY_DSN=${{ env.SENTRY_DSN }}
             SENTRY_ORG=${{ env.SENTRY_ORG }}
@@ -148,6 +151,7 @@ jobs:
           build-args: |
             VERSION=${{ github.sha }}
             API_SERVER=${{ env.API_SERVER }}
+            URL_PREFIX=${{ env.URL_PREFIX }}
             GOOGLE_CLIENT_ID=${{ env.GOOGLE_CLIENT_ID }}
             SENTRY_DSN=${{ env.SENTRY_DSN }}
             SENTRY_ORG=${{ env.SENTRY_ORG }}
@@ -170,6 +174,7 @@ jobs:
           build-args: |
             VERSION=${{ github.sha }}
             API_SERVER={{ env.API_SERVER }}
+            URL_PREFIX=${{ env.URL_PREFIX }}
             GOOGLE_CLIENT_ID=${{ env.GOOGLE_CLIENT_ID }}
             SENTRY_DSN=${{ env.SENTRY_DSN }}
             SENTRY_ORG=${{ env.SENTRY_ORG }}
@@ -223,13 +228,14 @@ jobs:
         with:
           files_yaml: |
             api:
-              - apps/api/**
+              - apps/server/**
             web:
               - apps/web/**
             worker:
               - apps/worker/**
-            shared:
+            common:
               - packages/**
+              - apps/server**
               - Dockerfile
               - package.json
             migrations:
@@ -247,19 +253,19 @@ jobs:
             --wait
 
       - name: "Deploy API"
-        if: ${{ inputs.force || steps.changed-files-yaml.outputs.api_any_changed == 'true' || steps.changed-files-yaml.outputs.shared_any_changed == 'true' }}
+        if: ${{ inputs.force || steps.changed-files-yaml.outputs.api_any_changed == 'true' || steps.changed-files-yaml.outputs.common_any_changed == 'true' }}
         run: |-
           kubectl set image deployment.v1.apps/peated-api peated-api="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/peated/api:${{ github.sha }}"
           kubectl rollout status deployment/peated-api --timeout=5m
 
       - name: "Deploy Web"
-        if: ${{ inputs.force || steps.changed-files-yaml.outputs.web_any_changed == 'true' || steps.changed-files-yaml.outputs.shared_any_changed == 'true' }}
+        if: ${{ inputs.force || steps.changed-files-yaml.outputs.web_any_changed == 'true' || steps.changed-files-yaml.outputs.common_any_changed == 'true' }}
         run: |-
           kubectl set image deployment.v1.apps/peated-web peated-web="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/peated/web:${{ github.sha }}"
           kubectl rollout status deployment/peated-web --timeout=5m
 
       - name: "Deploy Worker"
-        if: ${{ inputs.force || steps.changed-files-yaml.outputs.worker_any_changed == 'true' || steps.changed-files-yaml.outputs.shared_any_changed == 'true' }}
+        if: ${{ inputs.force || steps.changed-files-yaml.outputs.worker_any_changed == 'true' || steps.changed-files-yaml.outputs.common_any_changed == 'true' }}
         run: |-
           kubectl set image deployment.v1.apps/peated-worker peated-worker="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/peated/worker:${{ github.sha }}"
           kubectl rollout status deployment/peated-worker --timeout=5m

@@ -15,9 +15,8 @@ import type { SubmitHandler } from "react-hook-form";
 import { useForm } from "react-hook-form";
 import invariant from "tiny-invariant";
 
-import { MAX_FILESIZE } from "@peated/shared/constants";
+import { MAX_FILESIZE } from "@peated/server/constants";
 
-import type { Tasting } from "@peated/shared/types";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import Fieldset from "~/components/fieldset";
 import Form from "~/components/form";
@@ -29,6 +28,7 @@ import Layout from "~/components/layout";
 import Spinner from "~/components/spinner";
 import useApi from "~/hooks/useApi";
 import { ApiError } from "~/lib/api";
+import { redirectToAuth } from "~/lib/auth.server";
 import { toBlob } from "~/lib/blobs";
 import { logError } from "~/lib/log";
 
@@ -69,14 +69,15 @@ export async function action({ context, request, params }: ActionFunctionArgs) {
   return redirect(`/tastings/${params.tastingId}`);
 }
 
-export async function loader({ params, context }: LoaderFunctionArgs) {
-  invariant(params.tastingId);
+export async function loader({
+  request,
+  params: { tastingId },
+  context: { trpc, user },
+}: LoaderFunctionArgs) {
+  invariant(tastingId);
+  if (!user) return redirectToAuth({ request });
 
-  const tasting: Tasting = await context.api.get(
-    `/tastings/${params.tastingId}`,
-  );
-
-  return json({ tasting });
+  return json({ tasting: await trpc.tastingById.query(Number(tastingId)) });
 }
 
 export const meta: MetaFunction = () => {
@@ -116,9 +117,6 @@ export default function EditTastingImage() {
         }
       }
       return image;
-    },
-    onSuccess: (newUser) => {
-      queryClient.invalidateQueries(["tastings", tasting.id]);
     },
   });
 

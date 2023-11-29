@@ -1,32 +1,28 @@
-import type { LoaderFunctionArgs } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import { useParams } from "@remix-run/react";
-import { QueryClient, dehydrate, useQuery } from "@tanstack/react-query";
-import invariant from "tiny-invariant";
-
-import EmptyActivity from "~/components/emptyActivity";
-import TastingList from "~/components/tastingList";
-import useApi from "~/hooks/useApi";
-import { fetchTastings } from "~/queries/tastings";
-
-import type { SitemapFunction } from "remix-sitemap";
+import { makeTRPCClient } from "@peated/server/lib/trpc";
+import type { Bottle } from "@peated/server/types";
+import { useOutletContext } from "@remix-run/react";
+import { captureException } from "@sentry/remix";
+import { Fragment } from "react";
+import { type SitemapFunction } from "remix-sitemap";
+import RobotImage from "~/assets/robot.png";
+import { ClientOnly } from "~/components/clientOnly";
+import { DistributionChart } from "~/components/distributionChart";
+import Markdown from "~/components/markdown";
+import QueryBoundary from "~/components/queryBoundary";
 import config from "~/config";
-import { ApiClient } from "~/lib/api";
-import { fetchBottles } from "~/queries/bottles";
+import { trpc } from "~/lib/trpc";
 
 export const sitemap: SitemapFunction = async ({
   config: sitemapConfig,
   request,
 }) => {
-  const api = new ApiClient({
-    server: config.API_SERVER,
-  });
+  const trpcClient = makeTRPCClient(config.API_SERVER, null, captureException);
 
-  let page: number | null = 1;
+  let cursor: number | null = 1;
   const output = [];
-  while (page) {
-    const { results, rel } = await fetchBottles(api, {
-      page,
+  while (cursor) {
+    const { results, rel } = await trpcClient.bottleList.query({
+      cursor,
     });
 
     output.push(
@@ -36,51 +32,91 @@ export const sitemap: SitemapFunction = async ({
       })),
     );
 
-    page = rel?.nextPage || null;
+    cursor = rel?.nextCursor || null;
   }
   return output;
 };
 
-export async function loader({
-  params: { bottleId },
-  context,
-}: LoaderFunctionArgs) {
-  invariant(bottleId);
+const BottleTagDistribution = ({ bottleId }: { bottleId: number }) => {
+  const { data } = trpc.bottleTagList.useQuery({
+    bottle: bottleId,
+  });
 
-  const queryClient = new QueryClient();
-  await queryClient.prefetchQuery(["bottle", bottleId, "tastings"], () =>
-    fetchTastings(context.api, { bottle: bottleId }),
+  if (!data) return null;
+
+  const { results, totalCount } = data;
+
+  if (!results.length) return null;
+
+  return (
+    <DistributionChart
+      items={results.map((t) => ({
+        name: t.tag,
+        count: t.count,
+        tag: t.tag,
+      }))}
+      totalCount={totalCount}
+      to={(item) => `/bottles?tag=${encodeURIComponent(item.name)}`}
+    />
   );
+};
 
-  return json({ dehydratedState: dehydrate(queryClient) });
-}
-
-export default function BottleActivity() {
-  const api = useApi();
-
-  const { bottleId } = useParams<"bottleId">();
-  invariant(bottleId);
-
-  const { data: tastingList } = useQuery(["bottle", bottleId, "tastings"], () =>
-    fetchTastings(api, { bottle: bottleId }),
-  );
-
-  if (!tastingList) return null;
+export default function BottleDetails() {
+  const { bottle } = useOutletContext<{ bottle: Bottle }>();
 
   return (
     <>
-      {tastingList.results.length ? (
-        <TastingList values={tastingList.results} noBottle />
-      ) : (
-        <EmptyActivity to={`/bottles/${bottleId}/addTasting`}>
-          <span className="mt-2 block font-semibold ">
-            Are you enjoying a dram?
-          </span>
+      <div className="my-6 px-3 md:px-0">
+        <ClientOnly
+          fallback={
+            <div
+              className="animate-pulse bg-slate-800"
+              style={{ height: 200 }}
+            />
+          }
+        >
+          {() => (
+            <QueryBoundary
+              fallback={
+                <div
+                  className="animate-pulse bg-slate-800"
+                  style={{ height: 200 }}
+                />
+              }
+              loading={<Fragment />}
+            >
+              <BottleTagDistribution bottleId={bottle.id} />
+            </QueryBoundary>
+          )}
+        </ClientOnly>
+      </div>
 
-          <span className="mt-2 block font-light">
-            Looks like no ones recorded this spirit. You could be the first!
-          </span>
-        </EmptyActivity>
+      {bottle.description && (
+        <div className="my-6 px-3 md:px-0">
+          <div className="flex space-x-4">
+            <div className="prose prose-invert -mt-5 max-w-none flex-auto">
+              <Markdown content={bottle.description} />
+            </div>
+            <img src={RobotImage} className="hidden h-40 w-40 sm:block" />
+          </div>
+          {bottle.tastingNotes && (
+            <>
+              <h3 className="text-highlight text-lg font-bold">
+                Tasting Notes
+              </h3>
+              <div className="prose prose-invert max-w-none flex-auto">
+                <dl>
+                  <dt>Nose</dt>
+                  <dd>{bottle.tastingNotes.nose}</dd>
+                  <dt>Palate</dt>
+                  <dd>{bottle.tastingNotes.palate}</dd>
+                  <dt>Finish</dt>
+                  <dd>{bottle.tastingNotes.finish}</dd>
+                </dl>
+              </div>
+            </>
+          )}
+        </div>
       )}
     </>
   );

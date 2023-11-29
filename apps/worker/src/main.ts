@@ -1,18 +1,17 @@
 import * as Sentry from "@sentry/node-experimental";
 import { ProfilingIntegration } from "@sentry/profiling-node";
+import type { JobFunction } from "faktory-worker";
 import faktory from "faktory-worker";
 import { AsyncTask, CronJob, ToadScheduler } from "toad-scheduler";
-
-const scheduler = new ToadScheduler();
-
+import pushJob from "../../server/src/jobs";
+import packageData from "../package.json";
 import generateBottleDetails from "./jobs/generateBottleDetails";
 import generateEntityDetails from "./jobs/generateEntityDetails";
-import { main as astorwines } from "./price-scraper/astorwines";
-import { main as healthyspirits } from "./price-scraper/healthyspirits";
-import { main as totalwine } from "./price-scraper/totalwine";
-import { main as woodencork } from "./price-scraper/woodencork";
-
-import packageData from "../package.json";
+import notifyDiscordOnTasting from "./jobs/notifyDiscordOnTasting";
+import scrapeAstorWines from "./jobs/scrapeAstorWines";
+import scrapeHealthySpirits from "./jobs/scrapeHealthySpirits";
+import scrapeTotalWine from "./jobs/scrapeTotalWine";
+import scrapeWoodenCork from "./jobs/scrapeWoodenCork";
 
 Sentry.init({
   dsn: process.env.SENTRY_DSN,
@@ -22,9 +21,11 @@ Sentry.init({
   tracesSampleRate: 1.0,
   profilesSampleRate: 1.0,
   integrations: [new ProfilingIntegration()],
+  spotlight: process.env.NODE_ENV === "development",
 });
-
 Sentry.setTag("service", packageData.name);
+
+const scheduler = new ToadScheduler();
 
 function job(schedule: string, name: string, cb: () => Promise<void>) {
   const task = new AsyncTask(name, async () => {
@@ -91,22 +92,22 @@ async function main() {
   if (process.env.NODE_ENV === "production") {
     job("*/60 * * * *", "scrape-wooden-cork", async () => {
       console.log("Scraping Wooden Cork");
-      await woodencork();
+      await pushJob("ScrapeWoodenCork");
     });
 
     job("*/60 * * * *", "scrape-total-wine", async () => {
       console.log("Scraping Total Wine");
-      await totalwine();
+      await pushJob("ScrapeTotalWine");
     });
 
     job("*/60 * * * *", "scrape-astor-wines", async () => {
       console.log("Scraping Astor Wines");
-      await astorwines();
+      await pushJob("ScrapeAstorWines");
     });
 
     job("*/60 * * * *", "scrape-healthy-spirits", async () => {
       console.log("Scraping Healthy Spirits");
-      await healthyspirits();
+      await pushJob("ScrapeHealthySpirits");
     });
   }
 
@@ -128,8 +129,17 @@ async function main() {
   console.log("Scheduler Running...");
 }
 
-faktory.register("GenerateBottleDetails", generateBottleDetails);
-faktory.register("GenerateEntityDetails", generateEntityDetails);
+// faktory does not have correct types
+faktory.register("GenerateBottleDetails", generateBottleDetails as JobFunction);
+faktory.register("GenerateEntityDetails", generateEntityDetails as JobFunction);
+faktory.register(
+  "NotifyDiscordOnTasting",
+  notifyDiscordOnTasting as JobFunction,
+);
+faktory.register("ScrapeAstorWines", scrapeAstorWines);
+faktory.register("ScrapeHealthySpirits", scrapeHealthySpirits);
+faktory.register("ScrapeTotalWine", scrapeTotalWine);
+faktory.register("ScrapeWoodenCork", scrapeWoodenCork);
 
 process.on("SIGINT", function () {
   scheduler.stop();

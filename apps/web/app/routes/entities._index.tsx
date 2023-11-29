@@ -1,21 +1,17 @@
-import type { LoaderFunction } from "@remix-run/node";
+import { ENTITY_TYPE_LIST, MAJOR_COUNTRIES } from "@peated/server/constants";
+import { toTitleCase } from "@peated/server/lib/strings";
+import type { LoaderFunctionArgs, SerializeFrom } from "@remix-run/node";
 import { json, type MetaFunction } from "@remix-run/node";
-import { useLocation } from "@remix-run/react";
-import { dehydrate, QueryClient, useQuery } from "@tanstack/react-query";
-
-import { ENTITY_TYPE_LIST, MAJOR_COUNTRIES } from "@peated/shared/constants";
-import { toTitleCase } from "@peated/shared/lib/strings";
-import type { EntityType } from "@peated/shared/types";
+import { useLoaderData, useLocation } from "@remix-run/react";
 import { type SitemapFunction } from "remix-sitemap";
 import EmptyActivity from "~/components/emptyActivity";
 import EntityTable from "~/components/entityTable";
 import Layout from "~/components/layout";
 import QueryBoundary from "~/components/queryBoundary";
 import SidebarLink from "~/components/sidebarLink";
-import useApi from "~/hooks/useApi";
-import type { ApiClient } from "~/lib/api";
 import { buildQueryString } from "~/lib/urls";
-import { fetchEntities } from "~/queries/entities";
+
+const DEFAULT_SORT = "-tastings";
 
 export const sitemap: SitemapFunction = () => ({
   exclude: true,
@@ -29,72 +25,55 @@ export const meta: MetaFunction = () => {
   ];
 };
 
-export const loader: LoaderFunction = async ({ context, request }) => {
-  const queryClient = new QueryClient();
-
-  const url = new URL(request.url);
-  const query = buildQuery(context.api, url.searchParams);
-
-  await queryClient.prefetchQuery(query);
-
-  return json({ dehydratedState: dehydrate(queryClient) });
-};
+export async function loader({
+  request,
+  context: { trpc },
+}: LoaderFunctionArgs) {
+  const { searchParams } = new URL(request.url);
+  const numericFields = new Set(["cursor", "limit"]);
+  return json({
+    entityList: await trpc.entityList.query(
+      Object.fromEntries(
+        [...searchParams.entries()].map(([k, v]) =>
+          numericFields.has(k) ? [k, Number(v)] : [k, v === "" ? null : v],
+        ),
+      ),
+    ),
+  });
+}
 
 export default function Entities() {
+  const { entityList } = useLoaderData<typeof loader>();
   return (
     <Layout rightSidebar={<FilterSidebar />}>
       <QueryBoundary>
-        <Content />
+        <Content entityList={entityList} />
       </QueryBoundary>
     </Layout>
   );
 }
 
-export function buildQuery(api: ApiClient, queryString: URLSearchParams) {
-  const page = queryString.get("page") || "1";
-  const type = queryString.get("type") || undefined;
-  const country = queryString.get("country") || undefined;
-  const region = queryString.get("region") || undefined;
-  const sort = queryString.get("sort") || "name";
-
-  return {
-    queryKey: [
-      "entities",
-      page,
-      "type",
-      type,
-      "country",
-      country,
-      "region",
-      region,
-      "sort",
-      sort,
-    ],
-    queryFn: () =>
-      fetchEntities(api, {
-        type: type as EntityType,
-        country,
-        region,
-        sort,
-        page,
-      }),
-  };
-}
-
-const Content = () => {
+function Content({
+  entityList,
+}: {
+  // TODO: this is probably wrong
+  entityList: SerializeFrom<typeof loader>["entityList"];
+}) {
   const location = useLocation();
   const qs = new URLSearchParams(location.search);
+  const sort = qs.get("sort") || DEFAULT_SORT;
 
-  const api = useApi();
-  const query = buildQuery(api, qs);
-  const { data } = useQuery(query);
-
-  if (!data) return null;
+  if (!entityList) return null;
 
   return (
     <>
-      {data.results.length > 0 ? (
-        <EntityTable entityList={data.results} rel={data.rel} />
+      {entityList.results.length > 0 ? (
+        <EntityTable
+          entityList={entityList.results}
+          rel={entityList.rel}
+          sort={sort}
+          withTastings
+        />
       ) : (
         <EmptyActivity>
           Looks like there's nothing in the database yet. Weird.
@@ -102,7 +81,7 @@ const Content = () => {
       )}
     </>
   );
-};
+}
 
 function FilterSidebar() {
   const location = useLocation();
@@ -113,7 +92,7 @@ function FilterSidebar() {
 
   return (
     <div className="flex-coloverflow-y-auto mt-8 flex bg-slate-950 px-6 py-4">
-      <ul role="list" className="flex flex-1 flex-col gap-y-7">
+      <ul role="list" className="flex flex-auto flex-col gap-y-7">
         <li>
           <div className="text-sm font-semibold text-slate-200">Type</div>
           <ul role="list" className="-mx-3 mt-2 space-y-1">
@@ -123,7 +102,7 @@ function FilterSidebar() {
                 pathname: location.pathname,
                 search: buildQueryString(location.search, {
                   type: "",
-                  page: 1,
+                  cursor: null,
                 }),
               }}
               size="small"
@@ -138,7 +117,7 @@ function FilterSidebar() {
                   pathname: location.pathname,
                   search: buildQueryString(location.search, {
                     type,
-                    page: 1,
+                    cursor: null,
                   }),
                 }}
                 size="small"
@@ -169,7 +148,7 @@ function FilterSidebar() {
                   pathname: location.pathname,
                   search: buildQueryString(location.search, {
                     country,
-                    page: "1",
+                    cursor: null,
                   }),
                 }}
                 size="small"
@@ -186,7 +165,7 @@ function FilterSidebar() {
                     pathname: location.pathname,
                     search: buildQueryString(location.search, {
                       country,
-                      page: "1",
+                      cursor: null,
                     }),
                   }}
                   size="small"
@@ -206,7 +185,7 @@ function FilterSidebar() {
                   pathname: location.pathname,
                   search: buildQueryString(location.search, {
                     region: "",
-                    page: "1",
+                    cursor: null,
                   }),
                 }}
                 size="small"
@@ -219,7 +198,7 @@ function FilterSidebar() {
                   pathname: location.pathname,
                   search: buildQueryString(location.search, {
                     region,
-                    page: "1",
+                    cursor: null,
                   }),
                 }}
                 size="small"

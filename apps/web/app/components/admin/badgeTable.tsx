@@ -1,6 +1,6 @@
 import { Link } from "@remix-run/react";
 
-import type { Badge, PagingRel } from "@peated/shared/types";
+import type { Badge, PagingRel } from "@peated/server/types";
 import Button from "../button";
 
 export default ({
@@ -47,16 +47,16 @@ export default ({
           className="flex items-center justify-between py-3"
           aria-label="Pagination"
         >
-          <div className="flex flex-1 justify-between gap-x-2 sm:justify-end">
+          <div className="flex flex-auto justify-between gap-x-2 sm:justify-end">
             <Button
-              to={rel.prevPage ? `?page=${rel.prevPage}` : undefined}
-              disabled={!rel.prevPage}
+              to={rel.prevCursor ? `?cursor=${rel.prevCursor}` : undefined}
+              disabled={!rel.prevCursor}
             >
               Previous
             </Button>
             <Button
-              to={rel.nextPage ? `?page=${rel.nextPage}` : undefined}
-              disabled={!rel.nextPage}
+              to={rel.nextCursor ? `?cursor=${rel.nextCursor}` : undefined}
+              disabled={!rel.nextCursor}
             >
               Next
             </Button>
