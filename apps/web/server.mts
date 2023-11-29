@@ -1,7 +1,12 @@
 import prom from "@isaacs/express-prometheus-middleware";
 import { sentryLink } from "@peated/server/src/lib/trpc";
 import { type AppRouter } from "@peated/server/trpc/router";
+import {
+  unstable_createViteServer,
+  unstable_loadViteServerBuild,
+} from "@remix-run/dev";
 import { createRequestHandler } from "@remix-run/express";
+import { installGlobals } from "@remix-run/node";
 import { type AppLoadContext } from "@remix-run/server-runtime";
 import * as Sentry from "@sentry/remix";
 import { wrapExpressCreateRequestHandler } from "@sentry/remix";
@@ -21,6 +26,8 @@ import {
 } from "~/services/session.server";
 import packageData from "./package.json";
 
+installGlobals();
+
 Sentry.init({
   dsn: config.SENTRY_DSN,
   release: config.VERSION,
@@ -34,6 +41,11 @@ Sentry.init({
 });
 
 Sentry.setTag("service", packageData.name);
+
+const vite =
+  process.env.NODE_ENV === "production"
+    ? undefined
+    : await unstable_createViteServer();
 
 const app = express();
 const metricsApp = express();
@@ -84,10 +96,14 @@ app.use(compression());
 app.disable("x-powered-by");
 
 // Remix fingerprints its assets so we can cache forever.
-app.use(
-  "/build",
-  express.static("public/build", { immutable: true, maxAge: "1y" }),
-);
+if (vite) {
+  app.use(vite.middlewares);
+} else {
+  app.use(
+    "/build",
+    express.static("public/build", { immutable: true, maxAge: "1y" }),
+  );
+}
 
 // Everything else (like favicon.ico) is cached for an hour. You may want to be
 // more aggressive with this caching.
@@ -159,7 +175,12 @@ const createSentryRequestHandler =
 app.all(
   "*",
   MODE === "production"
-    ? createSentryRequestHandler({ build: require(BUILD_DIR), getLoadContext })
+    ? createSentryRequestHandler({
+        build: vite
+          ? () => unstable_loadViteServerBuild(vite)
+          : await import(BUILD_DIR),
+        getLoadContext,
+      })
     : (...args) => {
         purgeRequireCache();
         const requestHandler = createSentryRequestHandler({
