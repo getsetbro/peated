@@ -1,3 +1,5 @@
+"use client";
+
 import type { Tasting } from "@peated/server/types";
 import { AnimatePresence } from "framer-motion";
 import { useState } from "react";

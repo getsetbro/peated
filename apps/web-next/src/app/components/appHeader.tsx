@@ -1,10 +1,8 @@
 "use client";
 
 import { Dialog } from "@headlessui/react";
-import { useLocation, useNavigate } from "@remix-run/react";
-import { useState } from "react";
-
 import useAuth from "@peated/web/hooks/useAuth";
+import { useState } from "react";
 import NavLink from "./navLink";
 import NotificationsPanel from "./notifications/panel";
 import { ProfileDropdown } from "./profileDropdown";
@@ -13,8 +11,6 @@ import UserAvatar from "./userAvatar";
 
 export default function AppHeader() {
   const { user } = useAuth();
-  const navigate = useNavigate();
-  const location = useLocation();
 
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);

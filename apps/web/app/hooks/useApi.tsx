@@ -1,3 +1,5 @@
+"use client";
+
 import config from "@peated/web/config";
 import { ApiClient } from "@peated/web/lib/api";
 import { createContext, useContext } from "react";

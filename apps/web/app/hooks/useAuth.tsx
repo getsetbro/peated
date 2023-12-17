@@ -1,3 +1,5 @@
+"use client";
+
 import type { User } from "@peated/server/types";
 import { createContext, useContext, useEffect, useState } from "react";
 

@@ -1,3 +1,5 @@
+"use client";
+
 import { BugAntIcon } from "@heroicons/react/24/outline";
 import { Feedback } from "@sentry-internal/feedback";
 import * as Sentry from "@sentry/remix";
